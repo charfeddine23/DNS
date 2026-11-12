@@ -1,0 +1,138 @@
+name: Build & Release DNS Pulse APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - 'README.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build-and-release:
+    name: Build Signed APK & Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Determine Dynamic Version
+        id: versioning
+        run: |
+          # Base version prefix
+          BASE_VERSION="1.0"
+          
+          # Total commit count for incremental versioning
+          TOTAL_COMMITS=$(git rev-list --count HEAD 2>/dev/null || echo "1")
+          
+          # Monotonically increasing versionCode
+          VERSION_CODE=$((100 + TOTAL_COMMITS))
+          
+          # Dynamic versionName format: 1.0.<commits>
+          VERSION_NAME="${BASE_VERSION}.${TOTAL_COMMITS}"
+          
+          echo "VERSION_CODE=${VERSION_CODE}" >> $GITHUB_ENV
+          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
+          echo "Determined Version Name: ${VERSION_NAME} (code: ${VERSION_CODE})"
+
+      - name: Restore Keystore & Configuration
+        run: |
+          # 1. Restore debug.keystore if base64 file is present
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+            echo "Restored persistent keystore for seamless app updates."
+          fi
+          
+          # 2. Ensure .env exists from .env.example
+          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+
+      - name: Build Signed APK
+        run: |
+          # Use gradle to assemble the APK signed with our consistent keystore
+          gradle assembleDebug -PversionCode=${{ env.VERSION_CODE }} -PversionName=${{ env.VERSION_NAME }} --no-daemon
+
+      - name: Prepare Artifact
+        id: prepare_artifact
+        run: |
+          # Target filename format: DNS Pulse.v1.x.x.apk
+          OUTPUT_APK="DNS Pulse.v${{ env.VERSION_NAME }}.apk"
+          
+          # Copy assembled APK to root with exact requested naming format
+          cp app/build/outputs/apk/debug/app-debug.apk "${OUTPUT_APK}"
+          
+          echo "APK_FILE=${OUTPUT_APK}" >> $GITHUB_ENV
+          echo "Prepared APK: ${OUTPUT_APK}"
+
+      - name: Clean Previous Releases (Keep only latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Cleaning older releases to keep only the latest release..."
+          # Fetch all release tags and delete them
+          RELEASES=$(gh release list --json tagName -q '.[].tagName' 2>/dev/null || true)
+          for tag in $RELEASES; do
+            echo "Deleting old release: $tag"
+            gh release delete "$tag" --yes --cleanup-tag || true
+          done
+
+      - name: Publish Latest GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="v${{ env.VERSION_NAME }}"
+          RELEASE_TITLE="DNS Pulse v${{ env.VERSION_NAME }}"
+          
+          NOTES=$(cat << 'EOF'
+          ### ⚡ DNS Pulse - New Update Released
+          
+          - **Application:** DNS Pulse (Pulse Suite)
+          - **Version:** `v${{ env.VERSION_NAME }}` (Build `${{ env.VERSION_CODE }}`)
+          - **Seamless Updates:** Signed with the consistent project key, allowing seamless update installation over existing versions without uninstalling.
+          
+          #### What's Included:
+          - One-Tap AdGuard (`dns.adguard.com`) Private DNS (DoT) Controller
+          - Shizuku API Bridge Service for non-root system DNS management
+          - Local Zero-Root VPN DNS Tunnel (IPv4 & IPv6)
+          - Live Asynchronous Latency Ping Benchmark & Auto-Fastest selector
+          - Android Quick Settings Tile
+          EOF
+          )
+          
+          echo "Creating release $TAG_NAME..."
+          gh release create "$TAG_NAME" "${{ env.APK_FILE }}" \
+            --title "$RELEASE_TITLE" \
+            --notes "$NOTES" \
+            --latest
+
+      - name: Clean Old GitHub Actions Workflow Runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Cleaning older completed workflow runs..."
+          # List runs excluding the currently active one and delete them
+          RUNS=$(gh run list --workflow=build-release.yml --status=completed --json databaseId -q '.[].databaseId' 2>/dev/null || true)
+          for run_id in $RUNS; do
+            echo "Deleting workflow run: $run_id"
+            gh run delete "$run_id" || true
+          done
+          echo "Workflow run cleanup complete."
