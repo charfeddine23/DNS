@@ -1,0 +1,6 @@
+{
+  "name": "DNS Pulse",
+  "description": "Next-generation DNS manager featuring instant One-Tap Private DNS (DoT) switching, Shizuku integration, local DNS VPN tunnel, and real-time latency ping testing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
