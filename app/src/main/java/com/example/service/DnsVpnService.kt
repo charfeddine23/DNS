@@ -10,6 +10,10 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
+import android.system.StructPollfd
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
@@ -25,6 +29,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
@@ -33,7 +38,12 @@ import java.net.InetAddress
 
 class DnsVpnService : VpnService() {
 
+    @Volatile
     private var vpnInterface: ParcelFileDescriptor? = null
+    @Volatile
+    private var wakeupPipeRead: ParcelFileDescriptor? = null
+    @Volatile
+    private var wakeupPipeWrite: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @OptIn(ExperimentalCoroutinesApi::class)
     private val dnsForwardDispatcher = Dispatchers.IO.limitedParallelism(16)
@@ -52,6 +62,9 @@ class DnsVpnService : VpnService() {
 
         private const val NOTIFICATION_CHANNEL_ID = "dns_pulse_vpn_channel"
         private const val NOTIFICATION_ID = 1001
+
+        @Volatile
+        private var activeInstance: DnsVpnService? = null
 
         private val _isRunning = MutableStateFlow(false)
         val isRunning = _isRunning.asStateFlow()
@@ -89,27 +102,43 @@ class DnsVpnService : VpnService() {
         }
 
         fun stopVpn(context: Context) {
-            try {
-                context.stopService(Intent(context, DnsVpnService::class.java))
-            } catch (e: Exception) {
-                Log.w(TAG, "stopService fallback", e)
+            // Update state immediately for responsive UI
+            _isRunning.value = false
+            _activeServerName.value = "Disconnected"
+
+            // Directly tear down active tunnel & foreground notification (stopService alone
+            // does not destroy a VpnService while the system holds a VpnService binding)
+            val instance = activeInstance
+            if (instance != null) {
+                instance.requestShutdown()
+            } else {
+                try {
+                    val stopIntent = Intent(context, DnsVpnService::class.java).apply {
+                        action = ACTION_STOP
+                    }
+                    context.startService(stopIntent)
+                } catch (_: Exception) {
+                    try {
+                        context.stopService(Intent(context, DnsVpnService::class.java))
+                    } catch (e: Exception) {
+                        Log.w(TAG, "stopService fallback", e)
+                    }
+                }
             }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        activeInstance = this
         when (intent?.action) {
             ACTION_STOP -> {
-                serviceScope.launch {
-                    disconnectVpn()
-                    stopForegroundCompat()
-                    stopSelf()
-                }
+                requestShutdown()
             }
             ACTION_START -> {
                 val serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "DNS Pulse"
@@ -129,18 +158,30 @@ class DnsVpnService : VpnService() {
                     return START_NOT_STICKY
                 }
 
-                // Run VPN establishment & packet loop off the Main Thread to avoid UI freezes / ANRs
+                // Signal previous tunnel loop to wake up and exit cleanly off Main Thread
                 val previousJob = tunnelJob
                 previousJob?.cancel()
+                signalWakeupPipe()
                 closeVpnInterfaceOnly()
 
                 tunnelJob = serviceScope.launch {
-                    previousJob?.join()
+                    withTimeoutOrNull(400) {
+                        previousJob?.join()
+                    }
                     connectVpnAsync(serverName, pIpv4, sIpv4, pIpv6, sIpv6)
                 }
             }
         }
         return START_NOT_STICKY
+    }
+
+    internal fun requestShutdown() {
+        disconnectVpn()
+        stopForegroundCompat()
+        stopSelf()
+        try {
+            applicationContext.stopService(Intent(applicationContext, DnsVpnService::class.java))
+        } catch (_: Exception) {}
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -176,6 +217,7 @@ class DnsVpnService : VpnService() {
         sIpv6: String
     ) {
         closeVpnInterfaceOnly()
+        closeWakeupPipe()
         var established: ParcelFileDescriptor? = null
 
         try {
@@ -222,14 +264,23 @@ class DnsVpnService : VpnService() {
                 return
             }
 
+            val pipe = try {
+                ParcelFileDescriptor.createPipe()
+            } catch (_: Exception) {
+                null
+            }
+            wakeupPipeRead = pipe?.get(0)
+            wakeupPipeWrite = pipe?.get(1)
+
             vpnInterface = established
             _isRunning.value = true
             _activeServerName.value = serverName
 
-            runDnsTunnelLoop(established, pIpv4)
+            runDnsTunnelLoop(established, wakeupPipeRead, pIpv4)
         } catch (e: CancellationException) {
             if (vpnInterface === established) {
                 closeVpnInterfaceOnly()
+                closeWakeupPipe()
             } else {
                 try {
                     established?.close()
@@ -250,24 +301,82 @@ class DnsVpnService : VpnService() {
         }
     }
 
-    private suspend fun runDnsTunnelLoop(pfd: ParcelFileDescriptor, fallbackIpv4Dns: String) {
+    private suspend fun runDnsTunnelLoop(
+        pfd: ParcelFileDescriptor,
+        wakeReadPfd: ParcelFileDescriptor?,
+        fallbackIpv4Dns: String
+    ) {
         val inStream = FileInputStream(pfd.fileDescriptor)
         val outStream = FileOutputStream(pfd.fileDescriptor)
         val packet = ByteArray(32767)
 
         try {
-            while (currentCoroutineContext().isActive && _isRunning.value && vpnInterface === pfd) {
-                val length = try {
-                    inStream.read(packet)
-                } catch (_: Exception) {
-                    break
+            if (wakeReadPfd != null) {
+                val tunPoll = StructPollfd().apply {
+                    fd = pfd.fileDescriptor
+                    events = OsConstants.POLLIN.toShort()
                 }
-                if (length <= 0) continue
+                val wakePoll = StructPollfd().apply {
+                    fd = wakeReadPfd.fileDescriptor
+                    events = OsConstants.POLLIN.toShort()
+                }
+                val pollFds = arrayOf(tunPoll, wakePoll)
 
-                val version = (packet[0].toInt() and 0xF0) ushr 4
-                when (version) {
-                    4 -> handleIpv4Packet(packet, length, outStream, fallbackIpv4Dns)
-                    6 -> handleIpv6Packet(packet, length, outStream, fallbackIpv4Dns)
+                while (currentCoroutineContext().isActive && _isRunning.value && vpnInterface === pfd) {
+                    tunPoll.revents = 0
+                    wakePoll.revents = 0
+                    val ready = try {
+                        Os.poll(pollFds, -1)
+                    } catch (e: ErrnoException) {
+                        if (e.errno == OsConstants.EINTR) continue
+                        break
+                    } catch (_: Exception) {
+                        break
+                    }
+
+                    if (!currentCoroutineContext().isActive || !_isRunning.value || vpnInterface !== pfd) {
+                        break
+                    }
+
+                    val wakeEvents = wakePoll.revents.toInt()
+                    if ((wakeEvents and (OsConstants.POLLIN or OsConstants.POLLHUP or OsConstants.POLLERR)) != 0) {
+                        break
+                    }
+
+                    val tunEvents = tunPoll.revents.toInt()
+                    if ((tunEvents and (OsConstants.POLLERR or OsConstants.POLLHUP or OsConstants.POLLNVAL)) != 0) {
+                        break
+                    }
+
+                    if (ready > 0 && (tunEvents and OsConstants.POLLIN) != 0) {
+                        val length = try {
+                            inStream.read(packet)
+                        } catch (_: Exception) {
+                            break
+                        }
+                        if (length <= 0) continue
+
+                        val version = (packet[0].toInt() and 0xF0) ushr 4
+                        when (version) {
+                            4 -> handleIpv4Packet(packet, length, outStream, fallbackIpv4Dns)
+                            6 -> handleIpv6Packet(packet, length, outStream, fallbackIpv4Dns)
+                        }
+                    }
+                }
+            } else {
+                while (currentCoroutineContext().isActive && _isRunning.value && vpnInterface === pfd) {
+                    val length = try {
+                        inStream.read(packet)
+                    } catch (_: Exception) {
+                        break
+                    }
+                    if (length <= 0) continue
+
+                    val version = (packet[0].toInt() and 0xF0) ushr 4
+                    when (version) {
+                        4 -> handleIpv4Packet(packet, length, outStream, fallbackIpv4Dns)
+                        6 -> handleIpv6Packet(packet, length, outStream, fallbackIpv4Dns)
+                    }
                 }
             }
         } catch (e: CancellationException) {
@@ -389,6 +498,25 @@ class DnsVpnService : VpnService() {
         }
     }
 
+    private fun signalWakeupPipe() {
+        try {
+            wakeupPipeWrite?.let { writePfd ->
+                FileOutputStream(writePfd.fileDescriptor).write(1)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun closeWakeupPipe() {
+        try {
+            wakeupPipeWrite?.close()
+        } catch (_: Exception) {}
+        wakeupPipeWrite = null
+        try {
+            wakeupPipeRead?.close()
+        } catch (_: Exception) {}
+        wakeupPipeRead = null
+    }
+
     private fun closeVpnInterfaceOnly() {
         try {
             vpnInterface?.close()
@@ -401,21 +529,24 @@ class DnsVpnService : VpnService() {
     private fun disconnectVpn() {
         _isRunning.value = false
         _activeServerName.value = "Disconnected"
+        signalWakeupPipe()
         tunnelJob?.cancel()
         tunnelJob = null
         closeVpnInterfaceOnly()
+        closeWakeupPipe()
     }
 
     override fun onDestroy() {
+        if (activeInstance === this) {
+            activeInstance = null
+        }
         disconnectVpn()
         serviceScope.cancel()
         super.onDestroy()
     }
 
     override fun onRevoke() {
-        disconnectVpn()
-        stopForegroundCompat()
-        stopSelf()
+        requestShutdown()
         super.onRevoke()
     }
 

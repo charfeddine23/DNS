@@ -219,24 +219,38 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun toggleVpn(context: Context) {
-        val isRunning = _uiState.value.isVpnActive
+        val isRunning = DnsVpnService.isRunning.value || _uiState.value.isVpnActive
         if (isRunning) {
-            DnsVpnService.stopVpn(context)
-            _uiState.value = _uiState.value.copy(userMessage = "Local DNS VPN Disconnected")
+            stopVpn(context)
         } else {
-            val server = _uiState.value.vpnServers.firstOrNull { it.id == _uiState.value.selectedVpnServerId }
-                ?: _uiState.value.vpnServers.first()
-            DnsVpnService.startVpn(
-                context = context,
-                serverName = server.name,
-                primaryIpv4 = server.primaryIpv4,
-                secondaryIpv4 = server.secondaryIpv4,
-                primaryIpv6 = server.primaryIpv6,
-                secondaryIpv6 = server.secondaryIpv6
-            )
-            _uiState.value = _uiState.value.copy(userMessage = "Connected to ${server.name} via local VPN")
-            measureActivePing(server.primaryIpv4)
+            startVpn(context)
         }
+    }
+
+    fun startVpn(context: Context) {
+        val server = _uiState.value.vpnServers.firstOrNull { it.id == _uiState.value.selectedVpnServerId }
+            ?: _uiState.value.vpnServers.first()
+        DnsVpnService.startVpn(
+            context = context,
+            serverName = server.name,
+            primaryIpv4 = server.primaryIpv4,
+            secondaryIpv4 = server.secondaryIpv4,
+            primaryIpv6 = server.primaryIpv6,
+            secondaryIpv6 = server.secondaryIpv6
+        )
+        _uiState.value = _uiState.value.copy(
+            userMessage = "Connecting to ${server.name} via local VPN..."
+        )
+        measureActivePing(server.primaryIpv4)
+    }
+
+    fun stopVpn(context: Context) {
+        DnsVpnService.stopVpn(context)
+        _uiState.value = _uiState.value.copy(
+            isVpnActive = false,
+            activeVpnServerName = "Disconnected",
+            userMessage = "Local DNS VPN Disconnected"
+        )
     }
 
     fun clearUserMessage() {

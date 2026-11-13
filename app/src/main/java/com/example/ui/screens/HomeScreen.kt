@@ -85,7 +85,7 @@ fun HomeScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
-            viewModel.toggleVpn(context)
+            viewModel.startVpn(context)
         }
     }
 
@@ -266,7 +266,7 @@ fun HomeScreen(
                         } else {
                             // Local VPN toggle
                             if (uiState.isVpnActive) {
-                                viewModel.toggleVpn(context)
+                                viewModel.stopVpn(context)
                             } else {
                                 var prepareFailed = false
                                 val prepareIntent = try {
@@ -284,7 +284,7 @@ fun HomeScreen(
                                     if (prepareIntent != null) {
                                         vpnLauncher.launch(prepareIntent)
                                     } else {
-                                        viewModel.toggleVpn(context)
+                                        viewModel.startVpn(context)
                                     }
                                 }
                             }
