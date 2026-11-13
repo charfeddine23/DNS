@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">DNS Pulse</string>
+    <string name="update_close_desc">إغلاق</string>
+    <string name="update_title_available">تحديث جديد متاح</string>
+    <string name="update_subtitle_new">تحديث جديد</string>
+    <string name="update_description_available">تحديث جديد متاح</string>
+    <string name="update_button_text">تحديث</string>
+    <string name="update_title_downloading">جاري تحميل التحديث</string>
+    <string name="update_title_ready">التحديث جاهز للتثبيت</string>
+    <string name="update_install_button">تثبيت</string>
+    <string name="update_title_checking">جاري التحقق من التحديثات</string>
+    <string name="update_subtitle_checking">يتم الاتصال بـ GitHub</string>
+    <string name="update_title_error">تعذر التحقق من التحديث</string>
+    <string name="update_retry_button">إعادة المحاولة</string>
 </resources>

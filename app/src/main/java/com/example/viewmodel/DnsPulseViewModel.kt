@@ -22,6 +22,7 @@ import com.example.utils.UpdateCheckResult
 import com.example.utils.UpdateDownloadState
 import com.example.utils.UpdateManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,13 +57,15 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private var updateCheckJob: Job? = null
+    private var lastAutoCheckAtMs: Long = 0L
+
     init {
         refreshSystemPrivateDnsState()
         observeVpnService()
         observeShizukuStatus()
         loadPreferences()
         pingAllServers()
-        checkForUpdates(isManual = false)
     }
 
     private fun loadPreferences() {
@@ -362,8 +365,30 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun checkForUpdatesOnAppEnter() {
+        val currentState = _uiState.value
+        if (updateCheckJob?.isActive == true) return
+        if (currentState.updateState is UpdateDownloadState.Downloading ||
+            currentState.updateState is UpdateDownloadState.ReadyToInstall
+        ) {
+            return
+        }
+        if (currentState.showUpdateDialog && currentState.updateState is UpdateDownloadState.Available) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastAutoCheckAtMs < 1_500L) return
+        lastAutoCheckAtMs = now
+        checkForUpdates(isManual = false)
+    }
+
     fun checkForUpdates(isManual: Boolean = false) {
-        viewModelScope.launch {
+        if (!isManual && updateCheckJob?.isActive == true) return
+        if (isManual) {
+            updateCheckJob?.cancel()
+        }
+
+        updateCheckJob = viewModelScope.launch {
             if (isManual) {
                 _uiState.value = _uiState.value.copy(
                     updateState = UpdateDownloadState.Checking,
@@ -441,7 +466,8 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     fun dismissUpdateDialog() {
         _uiState.value = _uiState.value.copy(
             showUpdateDialog = false,
-            updateState = if (_uiState.value.updateState is UpdateDownloadState.Error ||
+            updateState = if (_uiState.value.updateState is UpdateDownloadState.Available ||
+                _uiState.value.updateState is UpdateDownloadState.Error ||
                 _uiState.value.updateState is UpdateDownloadState.Checking
             ) UpdateDownloadState.Idle else _uiState.value.updateState
         )

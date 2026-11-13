@@ -274,6 +274,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.checkForUpdatesOnAppEnter()
+    }
+
     override fun onResume() {
         super.onResume()
         viewModel.refreshSystemPrivateDnsState()
