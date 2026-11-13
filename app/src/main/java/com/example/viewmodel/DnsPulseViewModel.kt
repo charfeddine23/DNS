@@ -339,10 +339,11 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
                 is UpdateCheckResult.UpToDate -> {
+                    val latestNote = result.latestTag?.let { " • GitHub: $it" }.orEmpty()
                     _uiState.value = _uiState.value.copy(
                         updateState = UpdateDownloadState.Idle,
                         showUpdateDialog = false,
-                        userMessage = if (isManual) "DNS Pulse is up to date (v${BuildConfig.VERSION_NAME})" else _uiState.value.userMessage
+                        userMessage = if (isManual) "Up to date (Installed: v${BuildConfig.VERSION_NAME}$latestNote)" else _uiState.value.userMessage
                     )
                 }
                 is UpdateCheckResult.Error -> {
