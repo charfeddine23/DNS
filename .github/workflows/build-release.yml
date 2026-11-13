@@ -31,17 +31,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK & Accept Licenses
-        uses: android-actions/setup-android@v3
-
-      - name: Install Required Android SDK 36 & Accept Licenses
+      - name: Accept Android SDK Licenses & Ensure SDK 36
         run: |
-          SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          SDKMANAGER="${SDK_DIR}/cmdline-tools/latest/bin/sdkmanager"
-          if [ -x "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-            "$SDKMANAGER" "platforms;android-36.1" "build-tools;36.0.0" >/dev/null 2>&1 || \
-            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" >/dev/null 2>&1 || true
+          set +o pipefail
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "Using Android SDK at: $SDK_DIR"
+          SDKMANAGER=$(find "$SDK_DIR/cmdline-tools" -maxdepth 3 -name "sdkmanager" -type f 2>/dev/null | sort -V | tail -n 1)
+          if [ -n "$SDKMANAGER" ]; then
+            echo "Found sdkmanager: $SDKMANAGER"
+            yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null 2>&1 || true
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" "platforms;android-36.1" "build-tools;36.0.0" || \
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" "platforms;android-36" "build-tools;36.0.0" || true
+          else
+            echo "Warning: sdkmanager not found under $SDK_DIR/cmdline-tools"
           fi
 
       - name: Setup Gradle
