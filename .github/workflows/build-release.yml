@@ -31,6 +31,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Android SDK & Accept Licenses
+        uses: android-actions/setup-android@v3
+
+      - name: Install Required Android SDK 36 & Accept Licenses
+        run: |
+          SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDKMANAGER="${SDK_DIR}/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+            "$SDKMANAGER" "platforms;android-36.1" "build-tools;36.0.0" >/dev/null 2>&1 || \
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" >/dev/null 2>&1 || true
+          fi
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -54,6 +67,10 @@ jobs:
           if [ -f "debug.keystore.base64" ]; then
             base64 -d debug.keystore.base64 > debug.keystore
             echo "Restored persistent keystore for seamless app updates."
+          elif [ ! -f "debug.keystore" ]; then
+            keytool -genkeypair -v -keystore debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
           if [ ! -f ".env" ] && [ -f ".env.example" ]; then
@@ -62,7 +79,7 @@ jobs:
 
       - name: Build Signed APK
         run: |
-          gradle assembleDebug -PversionCode=${{ env.VERSION_CODE }} -PversionName=${{ env.VERSION_NAME }} --no-daemon
+          gradle assembleDebug -PversionCode=${{ env.VERSION_CODE }} -PversionName=${{ env.VERSION_NAME }} --no-daemon --stacktrace
 
       - name: Prepare Artifact
         id: prepare_artifact
@@ -79,7 +96,6 @@ jobs:
           TAG_NAME="${{ env.TAG_NAME }}"
           RELEASE_TITLE="DNS Pulse ${TAG_NAME}"
 
-          # Remove existing release with the exact same tag if re-running on the same commit
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
             gh release delete "$TAG_NAME" --yes --cleanup-tag || true
           fi
@@ -96,6 +112,7 @@ jobs:
           - Shizuku API Bridge Service for non-root system DNS management
           - Local Zero-Root VPN DNS Tunnel (IPv4 & IPv6)
           - Live Asynchronous Latency Ping Benchmark & Auto-Fastest selector
+          - In-app GitHub Releases auto-updater
           - Android Quick Settings Tile
           EOF
           )
@@ -119,7 +136,6 @@ jobs:
             gh release delete "$tag" --yes --cleanup-tag || true
           done
 
-          # Clean up any leftover old version tags not attached to the newest release
           git fetch --tags --prune || true
           for tag in $(git tag -l 'v*' | grep -v "^${NEW_TAG}$" || true); do
             echo "Deleting leftover tag: $tag"

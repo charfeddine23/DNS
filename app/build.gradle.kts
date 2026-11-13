@@ -16,8 +16,8 @@ android {
     applicationId = "com.pulse.dnspulse"
     minSdk = 24
     targetSdk = 36
-    versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
-    versionName = (project.findProperty("versionName") as String?) ?: "1.0"
+    versionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 1
+    versionName = providers.gradleProperty("versionName").orNull ?: "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
