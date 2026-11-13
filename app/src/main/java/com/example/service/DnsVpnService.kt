@@ -6,33 +6,42 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.net.InetSocketAddress
-import java.nio.ByteBuffer
-import java.nio.channels.DatagramChannel
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
 
 class DnsVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val dnsForwardDispatcher = Dispatchers.IO.limitedParallelism(16)
     private var tunnelJob: Job? = null
+    private val outWriteLock = Any()
 
     companion object {
+        private const val TAG = "DnsVpnService"
         const val ACTION_START = "com.pulse.dnspulse.action.START"
         const val ACTION_STOP = "com.pulse.dnspulse.action.STOP"
         const val EXTRA_PRIMARY_IPV4 = "extra_primary_ipv4"
@@ -66,18 +75,25 @@ class DnsVpnService : VpnService() {
                 putExtra(EXTRA_PRIMARY_IPV6, primaryIpv6)
                 putExtra(EXTRA_SECONDARY_IPV6, secondaryIpv6)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Unable to start DnsVpnService", e)
+                _isRunning.value = false
+                _activeServerName.value = "Disconnected"
             }
         }
 
         fun stopVpn(context: Context) {
-            val intent = Intent(context, DnsVpnService::class.java).apply {
-                action = ACTION_STOP
+            try {
+                context.stopService(Intent(context, DnsVpnService::class.java))
+            } catch (e: Exception) {
+                Log.w(TAG, "stopService fallback", e)
             }
-            context.startService(intent)
         }
     }
 
@@ -89,154 +105,305 @@ class DnsVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                disconnectVpn()
-                stopSelf()
+                serviceScope.launch {
+                    disconnectVpn()
+                    stopForegroundCompat()
+                    stopSelf()
+                }
             }
             ACTION_START -> {
                 val serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "DNS Pulse"
-                val pIpv4 = intent.getStringExtra(EXTRA_PRIMARY_IPV4) ?: "94.140.14.14"
-                val sIpv4 = intent.getStringExtra(EXTRA_SECONDARY_IPV4) ?: ""
-                val pIpv6 = intent.getStringExtra(EXTRA_PRIMARY_IPV6) ?: ""
-                val sIpv6 = intent.getStringExtra(EXTRA_SECONDARY_IPV6) ?: ""
+                val pIpv4 = intent.getStringExtra(EXTRA_PRIMARY_IPV4)?.takeIf { it.isNotBlank() } ?: "94.140.14.14"
+                val sIpv4 = intent.getStringExtra(EXTRA_SECONDARY_IPV4).orEmpty()
+                val pIpv6 = intent.getStringExtra(EXTRA_PRIMARY_IPV6).orEmpty()
+                val sIpv6 = intent.getStringExtra(EXTRA_SECONDARY_IPV6).orEmpty()
 
-                startForeground(NOTIFICATION_ID, buildNotification(serverName))
-                connectVpn(serverName, pIpv4, sIpv4, pIpv6, sIpv6)
+                // Must enter foreground immediately on Android 8+ / 14+ with specialUse type
+                try {
+                    startForegroundCompat(buildNotification(serverName))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to enter foreground mode", e)
+                    _isRunning.value = false
+                    _activeServerName.value = "Disconnected"
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+
+                // Run VPN establishment & packet loop off the Main Thread to avoid UI freezes / ANRs
+                val previousJob = tunnelJob
+                previousJob?.cancel()
+                closeVpnInterfaceOnly()
+
+                tunnelJob = serviceScope.launch {
+                    previousJob?.join()
+                    connectVpnAsync(serverName, pIpv4, sIpv4, pIpv6, sIpv6)
+                }
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun connectVpn(
+    private fun startForegroundCompat(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun stopForegroundCompat() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "stopForegroundCompat ignored", e)
+        }
+    }
+
+    private suspend fun connectVpnAsync(
         serverName: String,
         pIpv4: String,
         sIpv4: String,
         pIpv6: String,
         sIpv6: String
     ) {
-        disconnectVpn()
+        closeVpnInterfaceOnly()
+        var established: ParcelFileDescriptor? = null
 
         try {
             val builder = Builder().apply {
                 setSession("DNS Pulse ($serverName)")
                 setMtu(1500)
-                // Local virtual IP inside VPN
                 addAddress("10.233.1.2", 30)
+                addDnsServer(pIpv4)
+                addRoute(pIpv4, 32)
 
-                // Add configured DNS servers
-                if (pIpv4.isNotBlank()) addDnsServer(pIpv4)
-                if (sIpv4.isNotBlank()) addDnsServer(sIpv4)
+                if (sIpv4.isNotBlank()) {
+                    addDnsServer(sIpv4)
+                    addRoute(sIpv4, 32)
+                }
+
                 if (pIpv6.isNotBlank()) {
                     try {
                         addAddress("fd00:1:fd00:1::2", 126)
                         addDnsServer(pIpv6)
-                        if (sIpv6.isNotBlank()) addDnsServer(sIpv6)
+                        addRoute(pIpv6, 128)
+                        if (sIpv6.isNotBlank()) {
+                            addDnsServer(sIpv6)
+                            addRoute(sIpv6, 128)
+                        }
                     } catch (e: Exception) {
-                        Log.w("DnsVpnService", "IPv6 routing optional skip", e)
+                        Log.w(TAG, "IPv6 routing optional skip", e)
                     }
                 }
 
-                // Route only DNS queries (port 53) to our local VPN interface by routing the DNS IP addresses
-                if (pIpv4.isNotBlank()) addRoute(pIpv4, 32)
-                if (sIpv4.isNotBlank()) addRoute(sIpv4, 32)
-                if (pIpv6.isNotBlank()) {
-                    try {
-                        addRoute(pIpv6, 128)
-                        if (sIpv6.isNotBlank()) addRoute(sIpv6, 128)
-                    } catch (_: Exception) {}
-                }
-
-                // Disallow VPN looping back on itself
                 try {
                     addDisallowedApplication(packageName)
                 } catch (e: Exception) {
-                    Log.w("DnsVpnService", "Cannot disallow self package", e)
+                    Log.w(TAG, "Cannot disallow self package", e)
                 }
             }
 
-            vpnInterface = builder.establish()
-            if (vpnInterface != null) {
-                _isRunning.value = true
-                _activeServerName.value = serverName
-                startDnsForwarding(pIpv4)
-            } else {
-                Log.e("DnsVpnService", "Failed to establish VPN interface (null)")
+            established = builder.establish()
+            if (established == null) {
+                Log.e(TAG, "Failed to establish VPN interface (null)")
+                _isRunning.value = false
+                _activeServerName.value = "Disconnected"
+                stopForegroundCompat()
                 stopSelf()
+                return
             }
+
+            vpnInterface = established
+            _isRunning.value = true
+            _activeServerName.value = serverName
+
+            runDnsTunnelLoop(established, pIpv4)
+        } catch (e: CancellationException) {
+            if (vpnInterface === established) {
+                closeVpnInterfaceOnly()
+            } else {
+                try {
+                    established?.close()
+                } catch (_: Exception) {}
+            }
+            throw e
         } catch (e: Exception) {
-            Log.e("DnsVpnService", "Error connecting VPN", e)
-            disconnectVpn()
-            stopSelf()
+            Log.e(TAG, "Error establishing/running VPN", e)
+            if (vpnInterface === established || vpnInterface == null) {
+                disconnectVpn()
+                stopForegroundCompat()
+                stopSelf()
+            } else {
+                try {
+                    established?.close()
+                } catch (_: Exception) {}
+            }
         }
     }
 
-    private fun startDnsForwarding(targetDnsIp: String) {
-        val pfd = vpnInterface ?: return
-        tunnelJob = serviceScope.launch {
-            val inStream = FileInputStream(pfd.fileDescriptor)
-            val outStream = FileOutputStream(pfd.fileDescriptor)
-            val packet = ByteArray(32767)
+    private suspend fun runDnsTunnelLoop(pfd: ParcelFileDescriptor, fallbackIpv4Dns: String) {
+        val inStream = FileInputStream(pfd.fileDescriptor)
+        val outStream = FileOutputStream(pfd.fileDescriptor)
+        val packet = ByteArray(32767)
 
-            var forwardSocket: DatagramChannel? = null
-            try {
-                forwardSocket = DatagramChannel.open()
-                protect(forwardSocket.socket())
-                forwardSocket.connect(InetSocketAddress(targetDnsIp, 53))
-                forwardSocket.configureBlocking(false)
-            } catch (e: Exception) {
-                Log.w("DnsVpnService", "Failed to open UDP forward channel", e)
-            }
-
-            try {
-                while (isActive && _isRunning.value) {
-                    val length = try {
-                        inStream.read(packet)
-                    } catch (e: Exception) {
-                        break
-                    }
-                    if (length <= 0) continue
-
-                    // Parse IP packet to check for UDP DNS payload
-                    // IP Version: 4
-                    val version = (packet[0].toInt() and 0xF0) ushr 4
-                    if (version == 4 && length > 28) {
-                        val headerLen = (packet[0].toInt() and 0x0F) * 4
-                        val protocol = packet[9].toInt() and 0xFF
-                        if (protocol == 17) { // UDP
-                            val udpHeaderStart = headerLen
-                            val dstPort = ((packet[udpHeaderStart + 2].toInt() and 0xFF) shl 8) or
-                                    (packet[udpHeaderStart + 3].toInt() and 0xFF)
-                            if (dstPort == 53 && forwardSocket != null && forwardSocket.isConnected) {
-                                val udpPayloadStart = udpHeaderStart + 8
-                                val udpPayloadLen = length - udpPayloadStart
-                                if (udpPayloadLen > 0) {
-                                    val sendBuf = ByteBuffer.wrap(packet, udpPayloadStart, udpPayloadLen)
-                                    try {
-                                        forwardSocket.write(sendBuf)
-                                    } catch (_: Exception) {}
-                                }
-                            }
-                        }
-                    }
+        try {
+            while (currentCoroutineContext().isActive && _isRunning.value && vpnInterface === pfd) {
+                val length = try {
+                    inStream.read(packet)
+                } catch (_: Exception) {
+                    break
                 }
-            } catch (e: Exception) {
-                Log.d("DnsVpnService", "Tunnel read ended", e)
-            } finally {
-                try { forwardSocket?.close() } catch (_: Exception) {}
+                if (length <= 0) continue
+
+                val version = (packet[0].toInt() and 0xF0) ushr 4
+                when (version) {
+                    4 -> handleIpv4Packet(packet, length, outStream, fallbackIpv4Dns)
+                    6 -> handleIpv6Packet(packet, length, outStream, fallbackIpv4Dns)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.d(TAG, "Tunnel loop ended", e)
+        }
+    }
+
+    private fun handleIpv4Packet(
+        packet: ByteArray,
+        length: Int,
+        outStream: FileOutputStream,
+        fallbackIpv4Dns: String
+    ) {
+        if (length < 28) return
+        val ihl = (packet[0].toInt() and 0x0F) * 4
+        if (ihl < 20 || length < ihl + 8) return
+        val protocol = packet[9].toInt() and 0xFF
+        if (protocol != 17) return // UDP only
+
+        val dstPort = ((packet[ihl + 2].toInt() and 0xFF) shl 8) or (packet[ihl + 3].toInt() and 0xFF)
+        if (dstPort != 53) return
+
+        val srcIp = packet.copyOfRange(12, 16)
+        val dstIp = packet.copyOfRange(16, 20)
+        val srcPort = ((packet[ihl].toInt() and 0xFF) shl 8) or (packet[ihl + 1].toInt() and 0xFF)
+        val udpPayloadOffset = ihl + 8
+        val dnsQueryLen = length - udpPayloadOffset
+        if (dnsQueryLen <= 0) return
+
+        val dnsQuery = packet.copyOfRange(udpPayloadOffset, length)
+
+        serviceScope.launch(dnsForwardDispatcher) {
+            val responseData = forwardDnsUdp(dnsQuery, dstIp, fallbackIpv4Dns) ?: return@launch
+            val responsePacket = DnsPacketBuilder.buildIpv4UdpResponse(
+                clientIp = srcIp,
+                clientPort = srcPort,
+                serverIp = dstIp,
+                serverPort = 53,
+                dnsPayload = responseData
+            )
+            synchronized(outWriteLock) {
+                try {
+                    outStream.write(responsePacket)
+                } catch (_: Exception) {}
             }
         }
     }
 
-    private fun disconnectVpn() {
-        tunnelJob?.cancel()
-        tunnelJob = null
+    private fun handleIpv6Packet(
+        packet: ByteArray,
+        length: Int,
+        outStream: FileOutputStream,
+        fallbackIpv4Dns: String
+    ) {
+        if (length < 48) return
+        val nextHeader = packet[6].toInt() and 0xFF
+        if (nextHeader != 17) return // UDP only
+
+        val dstPort = ((packet[42].toInt() and 0xFF) shl 8) or (packet[43].toInt() and 0xFF)
+        if (dstPort != 53) return
+
+        val srcIp = packet.copyOfRange(8, 24)
+        val dstIp = packet.copyOfRange(24, 40)
+        val srcPort = ((packet[40].toInt() and 0xFF) shl 8) or (packet[41].toInt() and 0xFF)
+        val dnsQueryLen = length - 48
+        if (dnsQueryLen <= 0) return
+
+        val dnsQuery = packet.copyOfRange(48, length)
+
+        serviceScope.launch(dnsForwardDispatcher) {
+            val responseData = forwardDnsUdp(dnsQuery, dstIp, fallbackIpv4Dns) ?: return@launch
+            val responsePacket = DnsPacketBuilder.buildIpv6UdpResponse(
+                clientIp = srcIp,
+                clientPort = srcPort,
+                serverIp = dstIp,
+                serverPort = 53,
+                dnsPayload = responseData
+            )
+            synchronized(outWriteLock) {
+                try {
+                    outStream.write(responsePacket)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun forwardDnsUdp(
+        dnsQuery: ByteArray,
+        targetIpBytes: ByteArray,
+        fallbackIpv4Dns: String
+    ): ByteArray? {
+        return try {
+            val targetAddr = InetAddress.getByAddress(targetIpBytes)
+            forwardToAddress(dnsQuery, targetAddr)
+        } catch (_: Exception) {
+            try {
+                forwardToAddress(dnsQuery, InetAddress.getByName(fallbackIpv4Dns))
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun forwardToAddress(dnsQuery: ByteArray, address: InetAddress): ByteArray? {
+        DatagramSocket().use { socket ->
+            if (!protect(socket)) {
+                Log.w(TAG, "protect(socket) failed")
+            }
+            socket.soTimeout = 4000
+            val outPacket = DatagramPacket(dnsQuery, dnsQuery.size, address, 53)
+            socket.send(outPacket)
+
+            val respBuffer = ByteArray(4096)
+            val inPacket = DatagramPacket(respBuffer, respBuffer.size)
+            socket.receive(inPacket)
+            return respBuffer.copyOfRange(0, inPacket.length)
+        }
+    }
+
+    private fun closeVpnInterfaceOnly() {
         try {
             vpnInterface?.close()
         } catch (e: Exception) {
-            Log.e("DnsVpnService", "Error closing vpnInterface", e)
+            Log.e(TAG, "Error closing vpnInterface", e)
         }
         vpnInterface = null
+    }
+
+    private fun disconnectVpn() {
         _isRunning.value = false
         _activeServerName.value = "Disconnected"
+        tunnelJob?.cancel()
+        tunnelJob = null
+        closeVpnInterfaceOnly()
     }
 
     override fun onDestroy() {
@@ -247,6 +414,8 @@ class DnsVpnService : VpnService() {
 
     override fun onRevoke() {
         disconnectVpn()
+        stopForegroundCompat()
+        stopSelf()
         super.onRevoke()
     }
 
@@ -299,5 +468,141 @@ class DnsVpnService : VpnService() {
             )
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+}
+
+object DnsPacketBuilder {
+
+    fun buildIpv4UdpResponse(
+        clientIp: ByteArray,
+        clientPort: Int,
+        serverIp: ByteArray,
+        serverPort: Int,
+        dnsPayload: ByteArray
+    ): ByteArray {
+        val udpLength = 8 + dnsPayload.size
+        val totalLength = 20 + udpLength
+        val packet = ByteArray(totalLength)
+
+        // IPv4 Header (20 bytes)
+        packet[0] = 0x45.toByte() // Version 4, IHL 5 (20 bytes)
+        packet[1] = 0x00
+        writeShort(packet, 2, totalLength)
+        writeShort(packet, 4, 0) // Identification
+        writeShort(packet, 6, 0x4000) // Don't fragment
+        packet[8] = 64 // TTL
+        packet[9] = 17 // UDP
+        writeShort(packet, 10, 0) // Checksum placeholder
+        System.arraycopy(serverIp, 0, packet, 12, 4) // Src IP = DNS Server
+        System.arraycopy(clientIp, 0, packet, 16, 4) // Dst IP = Client
+
+        val ipChecksum = onesComplementChecksum(packet, 0, 20)
+        writeShort(packet, 10, ipChecksum)
+
+        // UDP Header (8 bytes)
+        writeShort(packet, 20, serverPort)
+        writeShort(packet, 22, clientPort)
+        writeShort(packet, 24, udpLength)
+        writeShort(packet, 26, 0) // Checksum placeholder
+        System.arraycopy(dnsPayload, 0, packet, 28, dnsPayload.size)
+
+        val udpChecksum = computeIpv4UdpChecksum(serverIp, clientIp, packet, 20, udpLength)
+        writeShort(packet, 26, if (udpChecksum == 0) 0xFFFF else udpChecksum)
+
+        return packet
+    }
+
+    fun buildIpv6UdpResponse(
+        clientIp: ByteArray,
+        clientPort: Int,
+        serverIp: ByteArray,
+        serverPort: Int,
+        dnsPayload: ByteArray
+    ): ByteArray {
+        val udpLength = 8 + dnsPayload.size
+        val totalLength = 40 + udpLength
+        val packet = ByteArray(totalLength)
+
+        // IPv6 Header (40 bytes)
+        packet[0] = 0x60.toByte() // Version 6
+        packet[1] = 0x00
+        packet[2] = 0x00
+        packet[3] = 0x00
+        writeShort(packet, 4, udpLength) // Payload length
+        packet[6] = 17 // Next Header = UDP
+        packet[7] = 64 // Hop Limit
+        System.arraycopy(serverIp, 0, packet, 8, 16)
+        System.arraycopy(clientIp, 0, packet, 24, 16)
+
+        // UDP Header (8 bytes)
+        writeShort(packet, 40, serverPort)
+        writeShort(packet, 42, clientPort)
+        writeShort(packet, 44, udpLength)
+        writeShort(packet, 46, 0)
+        System.arraycopy(dnsPayload, 0, packet, 48, dnsPayload.size)
+
+        val udpChecksum = computeIpv6UdpChecksum(serverIp, clientIp, packet, 40, udpLength)
+        writeShort(packet, 46, if (udpChecksum == 0) 0xFFFF else udpChecksum)
+
+        return packet
+    }
+
+    private fun computeIpv4UdpChecksum(
+        srcIp: ByteArray,
+        dstIp: ByteArray,
+        packet: ByteArray,
+        udpOffset: Int,
+        udpLength: Int
+    ): Int {
+        val pseudo = ByteArray(12 + udpLength)
+        System.arraycopy(srcIp, 0, pseudo, 0, 4)
+        System.arraycopy(dstIp, 0, pseudo, 4, 4)
+        pseudo[8] = 0
+        pseudo[9] = 17
+        writeShort(pseudo, 10, udpLength)
+        System.arraycopy(packet, udpOffset, pseudo, 12, udpLength)
+        return onesComplementChecksum(pseudo, 0, pseudo.size)
+    }
+
+    private fun computeIpv6UdpChecksum(
+        srcIp: ByteArray,
+        dstIp: ByteArray,
+        packet: ByteArray,
+        udpOffset: Int,
+        udpLength: Int
+    ): Int {
+        val pseudo = ByteArray(40 + udpLength)
+        System.arraycopy(srcIp, 0, pseudo, 0, 16)
+        System.arraycopy(dstIp, 0, pseudo, 16, 16)
+        pseudo[32] = ((udpLength ushr 24) and 0xFF).toByte()
+        pseudo[33] = ((udpLength ushr 16) and 0xFF).toByte()
+        pseudo[34] = ((udpLength ushr 8) and 0xFF).toByte()
+        pseudo[35] = (udpLength and 0xFF).toByte()
+        pseudo[39] = 17
+        System.arraycopy(packet, udpOffset, pseudo, 40, udpLength)
+        return onesComplementChecksum(pseudo, 0, pseudo.size)
+    }
+
+    internal fun onesComplementChecksum(data: ByteArray, offset: Int, length: Int): Int {
+        var sum = 0
+        var i = offset
+        val end = offset + length
+        while (i + 1 < end) {
+            val word = ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
+            sum += word
+            i += 2
+        }
+        if (i < end) {
+            sum += (data[i].toInt() and 0xFF) shl 8
+        }
+        while ((sum ushr 16) != 0) {
+            sum = (sum and 0xFFFF) + (sum ushr 16)
+        }
+        return sum.inv() and 0xFFFF
+    }
+
+    private fun writeShort(buf: ByteArray, offset: Int, value: Int) {
+        buf[offset] = ((value ushr 8) and 0xFF).toByte()
+        buf[offset + 1] = (value and 0xFF).toByte()
     }
 }

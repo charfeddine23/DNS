@@ -265,11 +265,28 @@ fun HomeScreen(
                             }
                         } else {
                             // Local VPN toggle
-                            val prepareIntent = VpnService.prepare(context)
-                            if (prepareIntent != null) {
-                                vpnLauncher.launch(prepareIntent)
-                            } else {
+                            if (uiState.isVpnActive) {
                                 viewModel.toggleVpn(context)
+                            } else {
+                                var prepareFailed = false
+                                val prepareIntent = try {
+                                    VpnService.prepare(context)
+                                } catch (e: Exception) {
+                                    prepareFailed = true
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "VPN permission unavailable: ${e.localizedMessage}",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                    null
+                                }
+                                if (!prepareFailed) {
+                                    if (prepareIntent != null) {
+                                        vpnLauncher.launch(prepareIntent)
+                                    } else {
+                                        viewModel.toggleVpn(context)
+                                    }
+                                }
                             }
                         }
                     }

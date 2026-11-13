@@ -31,13 +31,36 @@ class DnsPulseTileService : TileService() {
             // Stop VPN
             DnsVpnService.stopVpn(this)
         } else {
-            // Start default AdGuard VPN
-            DnsVpnService.startVpn(
-                context = this,
-                serverName = "AdGuard DNS",
-                primaryIpv4 = "94.140.14.14",
-                secondaryIpv4 = "94.140.15.15"
-            )
+            val prepareIntent = try {
+                android.net.VpnService.prepare(this)
+            } catch (_: Exception) {
+                null
+            }
+            if (prepareIntent != null) {
+                val launchIntent = android.content.Intent(this, com.example.MainActivity::class.java).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    val pi = android.app.PendingIntent.getActivity(
+                        this,
+                        2,
+                        launchIntent,
+                        android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                    startActivityAndCollapse(pi)
+                } else {
+                    @Suppress("DEPRECATION")
+                    startActivityAndCollapse(launchIntent)
+                }
+            } else {
+                // Start default AdGuard VPN
+                DnsVpnService.startVpn(
+                    context = this,
+                    serverName = "AdGuard DNS",
+                    primaryIpv4 = "94.140.14.14",
+                    secondaryIpv4 = "94.140.15.15"
+                )
+            }
         }
         updateTileState()
     }
