@@ -1,5 +1,6 @@
 package com.example.service
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
@@ -44,11 +46,23 @@ class DnsVpnService : VpnService() {
     private var wakeupPipeRead: ParcelFileDescriptor? = null
     @Volatile
     private var wakeupPipeWrite: ParcelFileDescriptor? = null
+    @Volatile
+    private var currentServerKey: String? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @OptIn(ExperimentalCoroutinesApi::class)
     private val dnsForwardDispatcher = Dispatchers.IO.limitedParallelism(16)
     private var tunnelJob: Job? = null
     private val outWriteLock = Any()
+
+    data class PersistedVpnConfig(
+        val serverName: String,
+        val primaryIpv4: String,
+        val secondaryIpv4: String,
+        val primaryIpv6: String,
+        val secondaryIpv6: String
+    ) {
+        fun key(): String = "$serverName|$primaryIpv4|$secondaryIpv4|$primaryIpv6|$secondaryIpv6"
+    }
 
     companion object {
         private const val TAG = "DnsVpnService"
@@ -62,6 +76,15 @@ class DnsVpnService : VpnService() {
 
         private const val NOTIFICATION_CHANNEL_ID = "dns_pulse_vpn_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val KEEP_ALIVE_REQUEST_CODE = 1002
+
+        private const val VPN_PREFS_NAME = "dns_pulse_vpn_state"
+        private const val KEY_SHOULD_STAY_ACTIVE = "should_stay_active"
+        private const val KEY_SERVER_NAME = "server_name"
+        private const val KEY_PRIMARY_IPV4 = "primary_ipv4"
+        private const val KEY_SECONDARY_IPV4 = "secondary_ipv4"
+        private const val KEY_PRIMARY_IPV6 = "primary_ipv6"
+        private const val KEY_SECONDARY_IPV6 = "secondary_ipv6"
 
         @Volatile
         private var activeInstance: DnsVpnService? = null
@@ -72,6 +95,89 @@ class DnsVpnService : VpnService() {
         private val _activeServerName = MutableStateFlow("Disconnected")
         val activeServerName = _activeServerName.asStateFlow()
 
+        internal fun persistActiveConfig(
+            context: Context,
+            active: Boolean,
+            serverName: String,
+            primaryIpv4: String,
+            secondaryIpv4: String,
+            primaryIpv6: String,
+            secondaryIpv6: String
+        ) {
+            context.applicationContext
+                .getSharedPreferences(VPN_PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_SHOULD_STAY_ACTIVE, active)
+                .putString(KEY_SERVER_NAME, serverName)
+                .putString(KEY_PRIMARY_IPV4, primaryIpv4)
+                .putString(KEY_SECONDARY_IPV4, secondaryIpv4)
+                .putString(KEY_PRIMARY_IPV6, primaryIpv6)
+                .putString(KEY_SECONDARY_IPV6, secondaryIpv6)
+                .commit()
+        }
+
+        internal fun setShouldStayActive(context: Context, active: Boolean) {
+            context.applicationContext
+                .getSharedPreferences(VPN_PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_SHOULD_STAY_ACTIVE, active)
+                .commit()
+        }
+
+        fun isShouldStayActive(context: Context): Boolean {
+            return context.applicationContext
+                .getSharedPreferences(VPN_PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_SHOULD_STAY_ACTIVE, false)
+        }
+
+        fun restoreLastKnownConfig(context: Context): PersistedVpnConfig {
+            val prefs = context.applicationContext.getSharedPreferences(VPN_PREFS_NAME, Context.MODE_PRIVATE)
+            return PersistedVpnConfig(
+                serverName = prefs.getString(KEY_SERVER_NAME, null)?.takeIf { it.isNotBlank() } ?: "AdGuard DNS",
+                primaryIpv4 = prefs.getString(KEY_PRIMARY_IPV4, null)?.takeIf { it.isNotBlank() } ?: "94.140.14.14",
+                secondaryIpv4 = prefs.getString(KEY_SECONDARY_IPV4, null).orEmpty(),
+                primaryIpv6 = prefs.getString(KEY_PRIMARY_IPV6, null).orEmpty(),
+                secondaryIpv6 = prefs.getString(KEY_SECONDARY_IPV6, null).orEmpty()
+            )
+        }
+
+        private fun buildStartIntent(context: Context, config: PersistedVpnConfig): Intent {
+            return Intent(context, DnsVpnService::class.java).apply {
+                action = ACTION_START
+                putExtra(EXTRA_SERVER_NAME, config.serverName)
+                putExtra(EXTRA_PRIMARY_IPV4, config.primaryIpv4)
+                putExtra(EXTRA_SECONDARY_IPV4, config.secondaryIpv4)
+                putExtra(EXTRA_PRIMARY_IPV6, config.primaryIpv6)
+                putExtra(EXTRA_SECONDARY_IPV6, config.secondaryIpv6)
+            }
+        }
+
+        private fun cancelKeepAliveAlarm(context: Context) {
+            try {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+                val intent = Intent(context, DnsVpnService::class.java).apply { action = ACTION_START }
+                val pi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    PendingIntent.getForegroundService(
+                        context,
+                        KEEP_ALIVE_REQUEST_CODE,
+                        intent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
+                    )
+                } else {
+                    PendingIntent.getService(
+                        context,
+                        KEEP_ALIVE_REQUEST_CODE,
+                        intent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
+                    )
+                }
+                if (pi != null) {
+                    alarmManager.cancel(pi)
+                    pi.cancel()
+                }
+            } catch (_: Exception) {}
+        }
+
         fun startVpn(
             context: Context,
             serverName: String,
@@ -80,14 +186,23 @@ class DnsVpnService : VpnService() {
             primaryIpv6: String = "",
             secondaryIpv6: String = ""
         ) {
-            val intent = Intent(context, DnsVpnService::class.java).apply {
-                action = ACTION_START
-                putExtra(EXTRA_SERVER_NAME, serverName)
-                putExtra(EXTRA_PRIMARY_IPV4, primaryIpv4)
-                putExtra(EXTRA_SECONDARY_IPV4, secondaryIpv4)
-                putExtra(EXTRA_PRIMARY_IPV6, primaryIpv6)
-                putExtra(EXTRA_SECONDARY_IPV6, secondaryIpv6)
-            }
+            val config = PersistedVpnConfig(
+                serverName = serverName,
+                primaryIpv4 = primaryIpv4,
+                secondaryIpv4 = secondaryIpv4,
+                primaryIpv6 = primaryIpv6,
+                secondaryIpv6 = secondaryIpv6
+            )
+            persistActiveConfig(
+                context = context,
+                active = true,
+                serverName = serverName,
+                primaryIpv4 = primaryIpv4,
+                secondaryIpv4 = secondaryIpv4,
+                primaryIpv6 = primaryIpv6,
+                secondaryIpv6 = secondaryIpv6
+            )
+            val intent = buildStartIntent(context, config)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
@@ -96,12 +211,16 @@ class DnsVpnService : VpnService() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Unable to start DnsVpnService", e)
+                setShouldStayActive(context, false)
                 _isRunning.value = false
                 _activeServerName.value = "Disconnected"
             }
         }
 
         fun stopVpn(context: Context) {
+            setShouldStayActive(context, false)
+            cancelKeepAliveAlarm(context.applicationContext)
+
             // Update state immediately for responsive UI
             _isRunning.value = false
             _activeServerName.value = "Disconnected"
@@ -138,7 +257,10 @@ class DnsVpnService : VpnService() {
         activeInstance = this
         when (intent?.action) {
             ACTION_STOP -> {
+                setShouldStayActive(this, false)
+                cancelKeepAliveAlarm(this)
                 requestShutdown()
+                return START_NOT_STICKY
             }
             ACTION_START -> {
                 val serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "DNS Pulse"
@@ -147,35 +269,113 @@ class DnsVpnService : VpnService() {
                 val pIpv6 = intent.getStringExtra(EXTRA_PRIMARY_IPV6).orEmpty()
                 val sIpv6 = intent.getStringExtra(EXTRA_SECONDARY_IPV6).orEmpty()
 
-                // Must enter foreground immediately on Android 8+ / 14+ with specialUse type
-                try {
-                    startForegroundCompat(buildNotification(serverName))
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to enter foreground mode", e)
-                    _isRunning.value = false
-                    _activeServerName.value = "Disconnected"
+                val config = PersistedVpnConfig(serverName, pIpv4, sIpv4, pIpv6, sIpv6)
+                return startOrKeepTunnel(config)
+            }
+            else -> {
+                // System restarted service after task removal / process kill (START_STICKY with null intent)
+                if (isShouldStayActive(this)) {
+                    val restored = restoreLastKnownConfig(this)
+                    return startOrKeepTunnel(restored)
+                } else {
+                    stopForegroundCompat()
                     stopSelf()
                     return START_NOT_STICKY
                 }
-
-                // Signal previous tunnel loop to wake up and exit cleanly off Main Thread
-                val previousJob = tunnelJob
-                previousJob?.cancel()
-                signalWakeupPipe()
-                closeVpnInterfaceOnly()
-
-                tunnelJob = serviceScope.launch {
-                    withTimeoutOrNull(400) {
-                        previousJob?.join()
-                    }
-                    connectVpnAsync(serverName, pIpv4, sIpv4, pIpv6, sIpv6)
-                }
             }
         }
-        return START_NOT_STICKY
+    }
+
+    private fun startOrKeepTunnel(config: PersistedVpnConfig): Int {
+        persistActiveConfig(
+            context = this,
+            active = true,
+            serverName = config.serverName,
+            primaryIpv4 = config.primaryIpv4,
+            secondaryIpv4 = config.secondaryIpv4,
+            primaryIpv6 = config.primaryIpv6,
+            secondaryIpv6 = config.secondaryIpv6
+        )
+
+        // Must enter foreground immediately on Android 8+ / 14+ with specialUse type
+        try {
+            startForegroundCompat(buildNotification(config.serverName))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to enter foreground mode", e)
+            setShouldStayActive(this, false)
+            _isRunning.value = false
+            _activeServerName.value = "Disconnected"
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        // If the exact same tunnel is already live (e.g., triggered by keep-alive check), keep it untouched
+        if (vpnInterface != null && _isRunning.value && currentServerKey == config.key()) {
+            return START_STICKY
+        }
+
+        currentServerKey = config.key()
+
+        // Signal previous tunnel loop to wake up and exit cleanly off Main Thread
+        val previousJob = tunnelJob
+        previousJob?.cancel()
+        signalWakeupPipe()
+        closeVpnInterfaceOnly()
+
+        tunnelJob = serviceScope.launch {
+            withTimeoutOrNull(400) {
+                previousJob?.join()
+            }
+            connectVpnAsync(
+                config.serverName,
+                config.primaryIpv4,
+                config.secondaryIpv4,
+                config.primaryIpv6,
+                config.secondaryIpv6
+            )
+        }
+        return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Never tear down the VPN when the user swipes the app away from Recent Apps.
+        // Schedule a rapid foreground-service revival safeguard on OEM ROMs that force-stop tasks on swipe.
+        if (isShouldStayActive(this)) {
+            try {
+                val config = restoreLastKnownConfig(this)
+                val restartIntent = buildStartIntent(applicationContext, config)
+                val pi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    PendingIntent.getForegroundService(
+                        applicationContext,
+                        KEEP_ALIVE_REQUEST_CODE,
+                        restartIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                } else {
+                    PendingIntent.getService(
+                        applicationContext,
+                        KEEP_ALIVE_REQUEST_CODE,
+                        restartIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                }
+                val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                alarmManager?.set(
+                    AlarmManager.ELAPSED_REALTIME,
+                    SystemClock.elapsedRealtime() + 800L,
+                    pi
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "onTaskRemoved keep-alive schedule skipped", e)
+            }
+        }
     }
 
     internal fun requestShutdown() {
+        setShouldStayActive(this, false)
+        cancelKeepAliveAlarm(this)
+        currentServerKey = null
         disconnectVpn()
         stopForegroundCompat()
         stopSelf()

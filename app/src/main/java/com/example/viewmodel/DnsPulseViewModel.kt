@@ -42,6 +42,8 @@ data class HomeUiState(
     val livePingMs: Long? = null,
     val userMessage: String? = null,
     val shizukuStatus: ShizukuStatus = ShizukuStatus.NOT_AVAILABLE,
+    val autoStartBoot: Boolean = false,
+    val ambientGlow: Boolean = true,
     val updateState: UpdateDownloadState = UpdateDownloadState.Idle,
     val showUpdateDialog: Boolean = false
 )
@@ -77,6 +79,16 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.lastVpnServerIdFlow.collect { id ->
                 _uiState.value = _uiState.value.copy(selectedVpnServerId = id)
+            }
+        }
+        viewModelScope.launch {
+            prefs.autoStartBootFlow.collect { enabled ->
+                _uiState.value = _uiState.value.copy(autoStartBoot = enabled)
+            }
+        }
+        viewModelScope.launch {
+            prefs.glowIntensityFlow.collect { enabled ->
+                _uiState.value = _uiState.value.copy(ambientGlow = enabled)
             }
         }
     }
@@ -118,6 +130,20 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.setEngineMode(mode)
             _uiState.value = _uiState.value.copy(engineMode = mode)
+        }
+    }
+
+    fun setAutoStartBoot(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setAutoStartBoot(enabled)
+            _uiState.value = _uiState.value.copy(autoStartBoot = enabled)
+        }
+    }
+
+    fun setAmbientGlow(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setGlowIntensity(enabled)
+            _uiState.value = _uiState.value.copy(ambientGlow = enabled)
         }
     }
 

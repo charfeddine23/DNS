@@ -3,6 +3,9 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.os.PowerManager
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -76,9 +79,11 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var autoStartBoot by remember { mutableStateOf(false) }
-    var ambientGlow by remember { mutableStateOf(true) }
     var showExpertGuide by remember { mutableStateOf(false) }
+    val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
+    val isBatteryUnrestricted = remember(context) {
+        powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+    }
 
     val adbCmd = PrivateDnsController.getAdbCommand(context)
 
@@ -264,8 +269,8 @@ fun SettingsScreen(
                         )
                     }
                     Switch(
-                        checked = autoStartBoot,
-                        onCheckedChange = { autoStartBoot = it },
+                        checked = uiState.autoStartBoot,
+                        onCheckedChange = { viewModel.setAutoStartBoot(it) },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = DeepVoidBlack,
                             checkedTrackColor = ElectricCyan
@@ -295,14 +300,71 @@ fun SettingsScreen(
                         )
                     }
                     Switch(
-                        checked = ambientGlow,
-                        onCheckedChange = { ambientGlow = it },
+                        checked = uiState.ambientGlow,
+                        onCheckedChange = { viewModel.setAmbientGlow(it) },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = DeepVoidBlack,
                             checkedTrackColor = ElectricCyan
                         ),
                         modifier = Modifier.testTag("glow_switch")
                     )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Background Keep-Alive / Battery Optimization Card
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        } catch (_: Exception) {
+                            context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                        }
+                    }
+                    .padding(16.dp)
+                    .testTag("battery_optimization_card"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(
+                                (if (isBatteryUnrestricted) EmeraldMint else ElectricCyan).copy(alpha = 0.15f),
+                                CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Background Protection",
+                            tint = if (isBatteryUnrestricted) EmeraldMint else ElectricCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Background Keep-Alive",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = if (isBatteryUnrestricted)
+                                "Unrestricted • Protected from Recent Apps kill"
+                            else
+                                "Tap to set Battery to Unrestricted for OEM ROMs",
+                            color = if (isBatteryUnrestricted) EmeraldMint else TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
         }
