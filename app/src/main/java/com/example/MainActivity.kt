@@ -5,8 +5,10 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -31,18 +33,18 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.UpdateDialog
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ServersScreen
 import com.example.ui.screens.SettingsScreen
@@ -50,11 +52,13 @@ import com.example.ui.theme.DarkSurfaceElevated
 import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.DnsPulseTheme
 import com.example.ui.theme.ElectricCyan
-import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.utils.PrivateDnsController
+import com.example.utils.UpdateDownloadState
+import com.example.utils.UpdateManager
 import com.example.viewmodel.DnsPulseViewModel
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -69,11 +73,53 @@ class MainActivity : ComponentActivity() {
                 val uiState by viewModel.uiState.collectAsState()
                 val snackbarHostState = remember { SnackbarHostState() }
                 var selectedTab by remember { mutableIntStateOf(0) }
+                var pendingApkInstall by remember { mutableStateOf<File?>(null) }
+
+                val installPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) {
+                    val file = pendingApkInstall
+                    if (file != null && UpdateManager.canInstallPackages(this@MainActivity)) {
+                        UpdateManager.triggerApkInstall(this@MainActivity, file)
+                        pendingApkInstall = null
+                    }
+                }
+
+                val triggerApkInstallFlow: (File) -> Unit = { apkFile ->
+                    if (UpdateManager.canInstallPackages(this@MainActivity)) {
+                        val launched = UpdateManager.triggerApkInstall(this@MainActivity, apkFile)
+                        if (!launched) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Unable to launch package installer.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    } else {
+                        pendingApkInstall = apkFile
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Please allow \"Install unknown apps\" for DNS Pulse to update.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        installPermissionLauncher.launch(
+                            UpdateManager.buildManageUnknownSourcesIntent(this@MainActivity)
+                        )
+                    }
+                }
 
                 LaunchedEffect(uiState.userMessage) {
                     uiState.userMessage?.let { msg ->
                         snackbarHostState.showSnackbar(msg)
                         viewModel.clearUserMessage()
+                    }
+                }
+
+                // Automatically launch installer when APK download finishes
+                LaunchedEffect(uiState.updateState) {
+                    val state = uiState.updateState
+                    if (state is UpdateDownloadState.ReadyToInstall) {
+                        triggerApkInstallFlow(state.apkFile)
                     }
                 }
 
@@ -202,6 +248,16 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                }
+
+                if (uiState.showUpdateDialog && uiState.updateState != UpdateDownloadState.Idle) {
+                    UpdateDialog(
+                        updateState = uiState.updateState,
+                        onStartDownload = { release -> viewModel.startApkDownload(release) },
+                        onInstallApk = triggerApkInstallFlow,
+                        onRetryCheck = { viewModel.checkForUpdates(isManual = true) },
+                        onDismiss = { viewModel.dismissUpdateDialog() }
+                    )
                 }
             }
         }

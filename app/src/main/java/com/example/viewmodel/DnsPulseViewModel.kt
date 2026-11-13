@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
 import com.example.data.model.DnsEngineMode
 import com.example.data.model.DnsServerProfile
 import com.example.data.model.PrivateDnsPreset
@@ -12,10 +13,14 @@ import com.example.data.repository.DnsPresetData
 import com.example.service.DnsVpnService
 import com.example.service.ShizukuDnsBridgeService
 import com.example.service.ShizukuStatus
+import com.example.utils.GitHubReleaseInfo
 import com.example.utils.LatencyTester
 import com.example.utils.PrivateDnsController
 import com.example.utils.PrivateDnsMode
 import com.example.utils.PrivateDnsState
+import com.example.utils.UpdateCheckResult
+import com.example.utils.UpdateDownloadState
+import com.example.utils.UpdateManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -36,7 +41,9 @@ data class HomeUiState(
     val isPinging: Boolean = false,
     val livePingMs: Long? = null,
     val userMessage: String? = null,
-    val shizukuStatus: ShizukuStatus = ShizukuStatus.NOT_AVAILABLE
+    val shizukuStatus: ShizukuStatus = ShizukuStatus.NOT_AVAILABLE,
+    val updateState: UpdateDownloadState = UpdateDownloadState.Idle,
+    val showUpdateDialog: Boolean = false
 )
 
 class DnsPulseViewModel(application: Application) : AndroidViewModel(application) {
@@ -53,6 +60,7 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         observeShizukuStatus()
         loadPreferences()
         pingAllServers()
+        checkForUpdates(isManual = false)
     }
 
     private fun loadPreferences() {
@@ -312,6 +320,90 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
             }
             _uiState.value = _uiState.value.copy(vpnServers = updated)
         }
+    }
+
+    fun checkForUpdates(isManual: Boolean = false) {
+        viewModelScope.launch {
+            if (isManual) {
+                _uiState.value = _uiState.value.copy(
+                    updateState = UpdateDownloadState.Checking,
+                    showUpdateDialog = true
+                )
+            }
+
+            when (val result = UpdateManager.checkForUpdate(BuildConfig.VERSION_NAME)) {
+                is UpdateCheckResult.UpdateAvailable -> {
+                    _uiState.value = _uiState.value.copy(
+                        updateState = UpdateDownloadState.Available(result.release),
+                        showUpdateDialog = true
+                    )
+                }
+                is UpdateCheckResult.UpToDate -> {
+                    _uiState.value = _uiState.value.copy(
+                        updateState = UpdateDownloadState.Idle,
+                        showUpdateDialog = false,
+                        userMessage = if (isManual) "DNS Pulse is up to date (v${BuildConfig.VERSION_NAME})" else _uiState.value.userMessage
+                    )
+                }
+                is UpdateCheckResult.Error -> {
+                    if (isManual) {
+                        _uiState.value = _uiState.value.copy(
+                            updateState = UpdateDownloadState.Error(result.message),
+                            showUpdateDialog = true
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun startApkDownload(release: GitHubReleaseInfo) {
+        val context = getApplication<Application>()
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                updateState = UpdateDownloadState.Downloading(
+                    release = release,
+                    progressPercent = 0,
+                    downloadedBytes = 0L,
+                    totalBytes = release.apkSizeBytes
+                )
+            )
+
+            val downloadResult = UpdateManager.downloadApk(context, release) { percent, downloaded, total ->
+                _uiState.value = _uiState.value.copy(
+                    updateState = UpdateDownloadState.Downloading(
+                        release = release,
+                        progressPercent = percent,
+                        downloadedBytes = downloaded,
+                        totalBytes = total
+                    )
+                )
+            }
+
+            downloadResult
+                .onSuccess { apkFile ->
+                    _uiState.value = _uiState.value.copy(
+                        updateState = UpdateDownloadState.ReadyToInstall(apkFile, release)
+                    )
+                }
+                .onFailure { error ->
+                    _uiState.value = _uiState.value.copy(
+                        updateState = UpdateDownloadState.Error(
+                            message = error.localizedMessage ?: "Failed to download APK",
+                            release = release
+                        )
+                    )
+                }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _uiState.value = _uiState.value.copy(
+            showUpdateDialog = false,
+            updateState = if (_uiState.value.updateState is UpdateDownloadState.Error ||
+                _uiState.value.updateState is UpdateDownloadState.Checking
+            ) UpdateDownloadState.Idle else _uiState.value.updateState
+        )
     }
 
     override fun onCleared() {

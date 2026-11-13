@@ -30,7 +30,9 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
+import com.example.BuildConfig
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -307,6 +309,51 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        // Check for Updates Card
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.checkForUpdates(isManual = true) }
+                    .padding(16.dp)
+                    .testTag("check_updates_card"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(ElectricCyan.copy(alpha = 0.15f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SystemUpdate,
+                            contentDescription = "Check for Updates",
+                            tint = ElectricCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Check for Updates",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = "Current version: v${BuildConfig.VERSION_NAME} (GitHub Releases)",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
         // About Developer Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -346,7 +393,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "v1.0.0 • Pure Kotlin & Jetpack Compose",
+                        text = "v${BuildConfig.VERSION_NAME} • Pure Kotlin & Jetpack Compose",
                         color = TextSecondary,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace
