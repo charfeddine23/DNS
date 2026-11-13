@@ -1,11 +1,15 @@
 package com.example.utils
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.CacheControl
@@ -16,9 +20,11 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 data class GitHubReleaseInfo(
@@ -536,6 +542,11 @@ object UpdateManager {
                     return@withContext Result.failure(IOException("Downloaded APK file is empty"))
                 }
 
+                if (!isZipApkHeader(targetFile)) {
+                    targetFile.delete()
+                    return@withContext Result.failure(IOException("Downloaded file is not a valid APK package"))
+                }
+
                 onProgress(100, targetFile.length(), targetFile.length())
                 Result.success(targetFile)
             }
@@ -543,6 +554,102 @@ object UpdateManager {
             if (targetFile.exists()) targetFile.delete()
             Result.failure(e)
         }
+    }
+
+    sealed interface ApkCompatibilityResult {
+        data object Compatible : ApkCompatibilityResult
+        data class Incompatible(val reason: String) : ApkCompatibilityResult
+    }
+
+    internal fun isZipApkHeader(file: File): Boolean {
+        if (!file.exists() || file.length() < 4L) return false
+        return try {
+            RandomAccessFile(file, "r").use { raf ->
+                val b0 = raf.read()
+                val b1 = raf.read()
+                b0 == 0x50 && b1 == 0x4B // 'P' 'K'
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Verifies that [apkFile] can be installed directly over the currently installed app
+     * without uninstalling (matching packageName, >= versionCode, and matching signing certificate).
+     */
+    @Suppress("DEPRECATION")
+    fun verifyApkForDirectUpdate(context: Context, apkFile: File): ApkCompatibilityResult {
+        if (!apkFile.exists() || apkFile.length() == 0L || !isZipApkHeader(apkFile)) {
+            return ApkCompatibilityResult.Incompatible("Downloaded APK file is corrupted or incomplete.")
+        }
+
+        val pm = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+
+        val archiveInfo = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
+            }
+        } catch (_: Exception) {
+            null
+        } ?: return ApkCompatibilityResult.Compatible // Let Android PackageInstaller inspect if archive parser unavailable
+
+        if (archiveInfo.packageName != context.packageName) {
+            return ApkCompatibilityResult.Incompatible(
+                "Package ID mismatch (${archiveInfo.packageName} != ${context.packageName})."
+            )
+        }
+
+        val installedInfo = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                pm.getPackageInfo(context.packageName, flags)
+            }
+        } catch (_: Exception) {
+            null
+        }
+
+        if (installedInfo != null) {
+            val archiveCode = PackageInfoCompat.getLongVersionCode(archiveInfo)
+            val installedCode = PackageInfoCompat.getLongVersionCode(installedInfo)
+            if (archiveCode < installedCode) {
+                return ApkCompatibilityResult.Incompatible(
+                    "Update versionCode ($archiveCode) is lower than installed ($installedCode)."
+                )
+            }
+
+            val installedSigs = extractCertSha256Set(installedInfo)
+            val archiveSigs = extractCertSha256Set(archiveInfo)
+            if (installedSigs.isNotEmpty() && archiveSigs.isNotEmpty() && installedSigs.intersect(archiveSigs).isEmpty()) {
+                return ApkCompatibilityResult.Incompatible(
+                    "Signing key mismatch: the existing app was signed with a different certificate."
+                )
+            }
+        }
+
+        return ApkCompatibilityResult.Compatible
+    }
+
+    @Suppress("DEPRECATION")
+    private fun extractCertSha256Set(info: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners ?: info.signingInfo?.signingCertificateHistory
+        } else {
+            info.signatures
+        } ?: return emptySet()
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        return signatures.map { sig ->
+            digest.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) }
+        }.toSet()
     }
 
     fun canInstallPackages(context: Context): Boolean {
@@ -565,7 +672,7 @@ object UpdateManager {
     }
 
     /**
-     * Launches Android's package installer using FileProvider.
+     * Launches Android's package installer using FileProvider for direct in-place upgrade.
      */
     fun triggerApkInstall(context: Context, apkFile: File): Boolean {
         return try {
@@ -576,8 +683,11 @@ object UpdateManager {
             )
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
+                clipData = ClipData.newRawUri("DNS Pulse Update", apkUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
             }
             context.startActivity(installIntent)
             true

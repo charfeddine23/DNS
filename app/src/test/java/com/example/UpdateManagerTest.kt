@@ -162,4 +162,18 @@ class UpdateManagerTest {
         assertTrue(result is UpdateCheckResult.Error)
         assertTrue((result as UpdateCheckResult.Error).message.contains("no .apk asset"))
     }
+
+    @Test
+    fun `verifyApkForDirectUpdate rejects empty or non-apk html error files`() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val htmlFile = java.io.File.createTempFile("bad_update", ".apk", context.cacheDir)
+        try {
+            htmlFile.writeText("<html><body>404 Not Found</body></html>")
+            assertFalse(UpdateManager.isZipApkHeader(htmlFile))
+            val res = UpdateManager.verifyApkForDirectUpdate(context, htmlFile)
+            assertTrue(res is UpdateManager.ApkCompatibilityResult.Incompatible)
+        } finally {
+            htmlFile.delete()
+        }
+    }
 }

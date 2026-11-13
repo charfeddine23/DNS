@@ -86,25 +86,36 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val triggerApkInstallFlow: (File) -> Unit = { apkFile ->
-                    if (UpdateManager.canInstallPackages(this@MainActivity)) {
-                        val launched = UpdateManager.triggerApkInstall(this@MainActivity, apkFile)
-                        if (!launched) {
+                    when (val check = UpdateManager.verifyApkForDirectUpdate(this@MainActivity, apkFile)) {
+                        is UpdateManager.ApkCompatibilityResult.Incompatible -> {
                             Toast.makeText(
                                 this@MainActivity,
-                                "Unable to launch package installer.",
+                                check.reason,
                                 Toast.LENGTH_LONG
                             ).show()
                         }
-                    } else {
-                        pendingApkInstall = apkFile
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Please allow \"Install unknown apps\" for DNS Pulse to update.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        installPermissionLauncher.launch(
-                            UpdateManager.buildManageUnknownSourcesIntent(this@MainActivity)
-                        )
+                        is UpdateManager.ApkCompatibilityResult.Compatible -> {
+                            if (UpdateManager.canInstallPackages(this@MainActivity)) {
+                                val launched = UpdateManager.triggerApkInstall(this@MainActivity, apkFile)
+                                if (!launched) {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Unable to launch package installer.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            } else {
+                                pendingApkInstall = apkFile
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Please allow \"Install unknown apps\" for DNS Pulse to update.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                installPermissionLauncher.launch(
+                                    UpdateManager.buildManageUnknownSourcesIntent(this@MainActivity)
+                                )
+                            }
+                        }
                     }
                 }
 
