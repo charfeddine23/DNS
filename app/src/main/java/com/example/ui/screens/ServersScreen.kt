@@ -1,12 +1,11 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,8 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Button
@@ -44,13 +41,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.model.LatencyStatus
 import com.example.ui.components.DnsServerCard
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.AmberWarning
@@ -60,7 +57,7 @@ import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.GlassSurface
+import com.example.ui.theme.GlassBorderLuminous
 import com.example.ui.theme.GlassSurfaceVariant
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -76,12 +73,24 @@ fun ServersScreen(
 ) {
     var showAddCustomDialog by remember { mutableStateOf(false) }
 
+    val measuredServers = remember(uiState.vpnServers) {
+        uiState.vpnServers.filter { it.latencyMs != null && it.latencyMs > 0 }
+    }
+    val fastestServer = remember(measuredServers) {
+        measuredServers.minByOrNull { it.latencyMs ?: Long.MAX_VALUE }
+    }
+    val averagePingMs = remember(measuredServers) {
+        if (measuredServers.isEmpty()) null
+        else measuredServers.mapNotNull { it.latencyMs }.average().toLong()
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepVoidBlack)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(bottom = 110.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
             Spacer(modifier = Modifier.height(8.dp))
@@ -90,15 +99,15 @@ fun ServersScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "DNS Benchmark & Profiles",
                         color = TextPrimary,
                         fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.ExtraBold
                     )
                     Text(
-                        text = "Real-time latency ping analysis across worldwide resolvers",
+                        text = "Real-time latency ping telemetry across resolvers",
                         color = TextSecondary,
                         fontSize = 12.sp
                     )
@@ -106,12 +115,15 @@ fun ServersScreen(
 
                 IconButton(
                     onClick = { showAddCustomDialog = true },
-                    modifier = Modifier.testTag("add_custom_server_btn")
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("add_custom_server_btn")
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
-                            .background(ElectricCyan.copy(alpha = 0.2f), CircleShape),
+                            .size(38.dp)
+                            .background(ElectricCyan.copy(alpha = 0.16f), CircleShape)
+                            .border(1.dp, ElectricCyan.copy(alpha = 0.45f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -125,9 +137,13 @@ fun ServersScreen(
             }
         }
 
-        // Live Benchmark Summary Card
+        // Live Benchmark Telemetry Hero Card
         item {
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
+            GlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                borderColor = GlassBorderLuminous,
+                breathingGlow = uiState.isPinging || fastestServer != null
+            ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -143,7 +159,7 @@ fun ServersScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "LATENCY BENCHMARK",
+                                text = "LATENCY TELEMETRY",
                                 color = TextPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
@@ -157,7 +173,7 @@ fun ServersScreen(
                                 containerColor = ElectricCyan.copy(alpha = 0.15f),
                                 contentColor = ElectricCyan
                             ),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.testTag("benchmark_refresh_btn")
                         ) {
                             if (uiState.isPinging) {
@@ -178,14 +194,36 @@ fun ServersScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Speed indicators legend
+                    // Telemetry summary metrics row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        TelemetryStatTile(
+                            label = "FASTEST",
+                            value = fastestServer?.latencyMs?.let { "${it} ms" } ?: "-- ms",
+                            sub = fastestServer?.name ?: "Pending",
+                            accent = EmeraldMint,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TelemetryStatTile(
+                            label = "AVERAGE",
+                            value = averagePingMs?.let { "${it} ms" } ?: "-- ms",
+                            sub = "${measuredServers.size}/${uiState.vpnServers.size} Online",
+                            accent = ElectricCyan,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceAround
                     ) {
-                        LegendItem(color = EmeraldMint, label = "< 40ms", status = "Fast")
-                        LegendItem(color = AmberWarning, label = "40-100ms", status = "Normal")
-                        LegendItem(color = CrimsonPulse, label = "> 100ms", status = "Slow")
+                        LegendItem(color = EmeraldMint, label = "< 40ms", status = "Optimal")
+                        LegendItem(color = AmberWarning, label = "40-100ms", status = "Balanced")
+                        LegendItem(color = CrimsonPulse, label = "> 100ms", status = "Congested")
                     }
                 }
             }
@@ -197,37 +235,54 @@ fun ServersScreen(
                 onClick = { viewModel.autoSelectFastestServer() },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(50.dp)
                     .testTag("servers_auto_select_btn"),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = EmeraldMint.copy(alpha = 0.2f),
+                    containerColor = Color.Transparent,
                     contentColor = EmeraldMint
-                )
+                ),
+                contentPadding = PaddingValues(0.dp)
             ) {
-                Icon(imageVector = Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Auto-Select & Switch to Fastest Server",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    EmeraldMint.copy(alpha = 0.22f),
+                                    ElectricCyan.copy(alpha = 0.16f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = EmeraldMint.copy(alpha = 0.45f),
+                            shape = RoundedCornerShape(14.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp), tint = EmeraldMint)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Auto-Select & Switch to Fastest Server",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = EmeraldMint
+                        )
+                    }
+                }
             }
         }
 
-        // Servers List
-        items(uiState.vpnServers) { server ->
+        items(uiState.vpnServers, key = { it.id }) { server ->
             DnsServerCard(
                 profile = server,
                 isSelected = uiState.selectedVpnServerId == server.id,
-                onSelect = {
-                    viewModel.selectVpnServer(server.id)
-                }
+                onSelect = { viewModel.selectVpnServer(server.id) }
             )
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(28.dp))
         }
     }
 
@@ -238,6 +293,45 @@ fun ServersScreen(
                 viewModel.addCustomServer(name, p4, s4, p6, dot)
                 showAddCustomDialog = false
             }
+        )
+    }
+}
+
+@Composable
+private fun TelemetryStatTile(
+    label: String,
+    value: String,
+    sub: String,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(GlassSurfaceVariant)
+            .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = label,
+            color = TextSecondary,
+            fontSize = 9.5.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = value,
+            color = accent,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = FontFamily.Monospace
+        )
+        Text(
+            text = sub,
+            color = TextPrimary.copy(alpha = 0.85f),
+            fontSize = 11.sp,
+            maxLines = 1
         )
     }
 }

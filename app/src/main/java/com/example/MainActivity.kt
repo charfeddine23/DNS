@@ -5,19 +5,45 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Home
@@ -26,24 +52,35 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
+import com.example.data.model.DnsEngineMode
+import com.example.ui.components.BreathingAtmosphere
 import com.example.ui.components.UpdateDialog
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ServersScreen
@@ -52,13 +89,28 @@ import com.example.ui.theme.DarkSurfaceElevated
 import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.DnsPulseTheme
 import com.example.ui.theme.ElectricCyan
+import com.example.ui.theme.EmeraldMint
+import com.example.ui.theme.GlassBorder
+import com.example.ui.theme.GlassTopSpecular
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.utils.PrivateDnsController
+import com.example.utils.PrivateDnsMode
 import com.example.utils.UpdateDownloadState
 import com.example.utils.UpdateManager
 import com.example.viewmodel.DnsPulseViewModel
+import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.math.absoluteValue
+
+private data class NavTabSpec(
+    val index: Int,
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+    val testTag: String,
+    val contentDesc: String
+)
 
 class MainActivity : ComponentActivity() {
 
@@ -72,8 +124,26 @@ class MainActivity : ComponentActivity() {
             DnsPulseTheme {
                 val uiState by viewModel.uiState.collectAsState()
                 val snackbarHostState = remember { SnackbarHostState() }
-                var selectedTab by remember { mutableIntStateOf(0) }
+                val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
+                val coroutineScope = rememberCoroutineScope()
                 var pendingApkInstall by remember { mutableStateOf<File?>(null) }
+
+                val slideToPage: (Int) -> Unit = { targetPage ->
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(
+                            page = targetPage,
+                            animationSpec = spring(
+                                dampingRatio = 0.86f,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        )
+                    }
+                }
+
+                // Pressing back from Benchmark or Settings smoothly slides back to Home (Shield)
+                BackHandler(enabled = pagerState.currentPage != 0) {
+                    slideToPage(0)
+                }
 
                 val installPermissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.StartActivityForResult()
@@ -126,7 +196,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Automatically launch installer when APK download finishes
                 LaunchedEffect(uiState.updateState) {
                     val state = uiState.updateState
                     if (state is UpdateDownloadState.ReadyToInstall) {
@@ -134,141 +203,140 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Scaffold(
+                val isDoTActive = uiState.privateDnsState.mode is PrivateDnsMode.Strict
+                val isAdGuardDoT = isDoTActive &&
+                    uiState.privateDnsState.hostname.equals("dns.adguard.com", ignoreCase = true)
+                val isProtected = if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS) {
+                    isDoTActive
+                } else {
+                    uiState.isVpnActive
+                }
+                val continuousPagePos = pagerState.currentPage + pagerState.currentPageOffsetFraction
+
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(DeepVoidBlack),
-                    snackbarHost = { SnackbarHost(snackbarHostState) },
-                    contentWindowInsets = WindowInsets.safeDrawing,
-                    bottomBar = {
-                        NavigationBar(
-                            containerColor = DarkSurfaceElevated,
-                            contentColor = TextPrimary,
-                            tonalElevation = 8.dp,
+                        .background(DeepVoidBlack)
+                ) {
+                    // Full-bleed living, breathing cyber atmosphere behind all pages
+                    BreathingAtmosphere(
+                        isProtected = isProtected,
+                        isAdGuardShield = isAdGuardDoT,
+                        ambientGlowEnabled = uiState.ambientGlow,
+                        pageOffsetFraction = continuousPagePos
+                    )
+
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        containerColor = Color.Transparent,
+                        snackbarHost = {
+                            SnackbarHost(
+                                hostState = snackbarHostState,
+                                modifier = Modifier.padding(bottom = 86.dp)
+                            )
+                        },
+                        contentWindowInsets = WindowInsets.safeDrawing
+                    ) { innerPadding ->
+                        Box(
                             modifier = Modifier
-                                .windowInsetsPadding(WindowInsets.navigationBars)
-                                .testTag("main_bottom_nav")
+                                .fillMaxSize()
+                                .padding(
+                                    top = innerPadding.calculateTopPadding()
+                                )
                         ) {
-                            NavigationBarItem(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (selectedTab == 0) Icons.Filled.Home else Icons.Outlined.Home,
-                                        contentDescription = "Home"
-                                    )
-                                },
-                                label = { Text("Shield", fontSize = 11.sp) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = DeepVoidBlack,
-                                    indicatorColor = ElectricCyan,
-                                    selectedTextColor = ElectricCyan,
-                                    unselectedIconColor = TextSecondary,
-                                    unselectedTextColor = TextSecondary
+                            HorizontalPager(
+                                state = pagerState,
+                                beyondViewportPageCount = 1,
+                                flingBehavior = PagerDefaults.flingBehavior(
+                                    state = pagerState,
+                                    pagerSnapDistance = PagerSnapDistance.atMost(1)
                                 ),
-                                modifier = Modifier.testTag("nav_item_home")
-                            )
+                                modifier = Modifier.fillMaxSize()
+                            ) { page ->
+                                val pageOffset = ((pagerState.currentPage - page) +
+                                    pagerState.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
 
-                            NavigationBarItem(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (selectedTab == 1) Icons.Filled.Dns else Icons.Outlined.Dns,
-                                        contentDescription = "Benchmark"
-                                    )
-                                },
-                                label = { Text("Benchmark", fontSize = 11.sp) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = DeepVoidBlack,
-                                    indicatorColor = ElectricCyan,
-                                    selectedTextColor = ElectricCyan,
-                                    unselectedIconColor = TextSecondary,
-                                    unselectedTextColor = TextSecondary
-                                ),
-                                modifier = Modifier.testTag("nav_item_servers")
-                            )
-
-                            NavigationBarItem(
-                                selected = selectedTab == 2,
-                                onClick = { selectedTab = 2 },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (selectedTab == 2) Icons.Filled.Settings else Icons.Outlined.Settings,
-                                        contentDescription = "Settings"
-                                    )
-                                },
-                                label = { Text("Settings", fontSize = 11.sp) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = DeepVoidBlack,
-                                    indicatorColor = ElectricCyan,
-                                    selectedTextColor = ElectricCyan,
-                                    unselectedIconColor = TextSecondary,
-                                    unselectedTextColor = TextSecondary
-                                ),
-                                modifier = Modifier.testTag("nav_item_settings")
-                            )
-                        }
-                    }
-                ) { innerPadding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
-                        when (selectedTab) {
-                            0 -> HomeScreen(
-                                uiState = uiState,
-                                viewModel = viewModel,
-                                onFallbackRequired = { hostname ->
-                                    val intent = PrivateDnsController.copyToClipboardAndGetSettingsIntent(this@MainActivity, hostname)
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        "Copied \"$hostname\"! Paste it under Private DNS provider.",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                    try {
-                                        startActivity(intent)
-                                    } catch (_: Exception) {
-                                        startActivity(Intent(Settings.ACTION_SETTINGS))
-                                    }
-                                },
-                                onLaunchWirelessSettings = {
-                                    try {
-                                        startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                                    } catch (_: Exception) {
-                                        startActivity(Intent(Settings.ACTION_SETTINGS))
-                                    }
-                                },
-                                onNavigateToServers = { selectedTab = 1 }
-                            )
-                            1 -> ServersScreen(
-                                uiState = uiState,
-                                viewModel = viewModel
-                            )
-                            2 -> SettingsScreen(
-                                uiState = uiState,
-                                viewModel = viewModel,
-                                onLaunchWirelessSettings = {
-                                    try {
-                                        startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                                    } catch (_: Exception) {
-                                        startActivity(Intent(Settings.ACTION_SETTINGS))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer {
+                                            val scale = lerp(1f, 0.93f, pageOffset)
+                                            scaleX = scale
+                                            scaleY = scale
+                                            alpha = lerp(1f, 0.65f, pageOffset)
+                                        }
+                                ) {
+                                    when (page) {
+                                        0 -> HomeScreen(
+                                            uiState = uiState,
+                                            viewModel = viewModel,
+                                            onFallbackRequired = { hostname ->
+                                                val intent = PrivateDnsController.copyToClipboardAndGetSettingsIntent(
+                                                    this@MainActivity,
+                                                    hostname
+                                                )
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    "Copied \"$hostname\"! Paste it under Private DNS provider.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                try {
+                                                    startActivity(intent)
+                                                } catch (_: Exception) {
+                                                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                                                }
+                                            },
+                                            onLaunchWirelessSettings = {
+                                                try {
+                                                    startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                                                } catch (_: Exception) {
+                                                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                                                }
+                                            },
+                                            onNavigateToServers = { slideToPage(1) }
+                                        )
+                                        1 -> ServersScreen(
+                                            uiState = uiState,
+                                            viewModel = viewModel
+                                        )
+                                        2 -> SettingsScreen(
+                                            uiState = uiState,
+                                            viewModel = viewModel,
+                                            onLaunchWirelessSettings = {
+                                                try {
+                                                    startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                                                } catch (_: Exception) {
+                                                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                                                }
+                                            }
+                                        )
                                     }
                                 }
+                            }
+
+                            // Floating Glass Slide Dock pinned cleanly above system navigation bar
+                            FloatingPulseNavBar(
+                                currentPage = pagerState.currentPage,
+                                continuousPagePosition = continuousPagePos,
+                                activeAccent = if (isProtected && isAdGuardDoT) EmeraldMint else ElectricCyan,
+                                onSelectPage = slideToPage,
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .windowInsetsPadding(WindowInsets.navigationBars)
+                                    .padding(horizontal = 20.dp, vertical = 14.dp)
                             )
                         }
                     }
-                }
 
-                if (uiState.showUpdateDialog && uiState.updateState != UpdateDownloadState.Idle) {
-                    UpdateDialog(
-                        updateState = uiState.updateState,
-                        onStartDownload = { release -> viewModel.startApkDownload(release) },
-                        onInstallApk = triggerApkInstallFlow,
-                        onRetryCheck = { viewModel.checkForUpdates(isManual = true) },
-                        onDismiss = { viewModel.dismissUpdateDialog() }
-                    )
+                    if (uiState.showUpdateDialog && uiState.updateState != UpdateDownloadState.Idle) {
+                        UpdateDialog(
+                            updateState = uiState.updateState,
+                            onStartDownload = { release -> viewModel.startApkDownload(release) },
+                            onInstallApk = triggerApkInstallFlow,
+                            onRetryCheck = { viewModel.checkForUpdates(isManual = true) },
+                            onDismiss = { viewModel.dismissUpdateDialog() }
+                        )
+                    }
                 }
             }
         }
@@ -282,5 +350,137 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.refreshSystemPrivateDnsState()
+    }
+}
+
+@Composable
+private fun FloatingPulseNavBar(
+    currentPage: Int,
+    continuousPagePosition: Float,
+    activeAccent: Color,
+    onSelectPage: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tabs = remember {
+        listOf(
+            NavTabSpec(0, "Shield", Icons.Filled.Home, Icons.Outlined.Home, "nav_item_home", "Shield"),
+            NavTabSpec(1, "Benchmark", Icons.Filled.Dns, Icons.Outlined.Dns, "nav_item_servers", "Benchmark"),
+            NavTabSpec(2, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "nav_item_settings", "Settings")
+        )
+    }
+
+    val dockShape = RoundedCornerShape(28.dp)
+    val animatedAccent by animateColorAsState(
+        targetValue = activeAccent,
+        animationSpec = tween(500),
+        label = "nav_accent"
+    )
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .widthIn(max = 460.dp)
+            .height(66.dp)
+            .shadow(
+                elevation = 20.dp,
+                shape = dockShape,
+                ambientColor = animatedAccent.copy(alpha = 0.25f),
+                spotColor = animatedAccent.copy(alpha = 0.35f)
+            )
+            .clip(dockShape)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        DarkSurfaceElevated.copy(alpha = 0.94f),
+                        DeepVoidBlack.copy(alpha = 0.97f)
+                    )
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        GlassTopSpecular,
+                        GlassBorder,
+                        Color.White.copy(alpha = 0.05f)
+                    )
+                ),
+                shape = dockShape
+            )
+            .padding(5.dp)
+            .testTag("main_bottom_nav")
+    ) {
+        val tabWidth = maxWidth / tabs.size
+        val clampedPosition = continuousPagePosition.coerceIn(0f, (tabs.size - 1).toFloat())
+
+        // Real-time sliding luminous indicator capsule synced directly to swipe progress
+        Box(
+            modifier = Modifier
+                .offset(x = tabWidth * clampedPosition)
+                .width(tabWidth)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(23.dp))
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            animatedAccent.copy(alpha = 0.24f),
+                            animatedAccent.copy(alpha = 0.09f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    color = animatedAccent.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(23.dp)
+                )
+        )
+
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            tabs.forEach { tab ->
+                val isSelected = currentPage == tab.index
+                val iconScale by animateFloatAsState(
+                    targetValue = if (isSelected) 1.12f else 1f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "tab_icon_scale_${tab.index}"
+                )
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(23.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(bounded = true, color = animatedAccent),
+                            onClick = { onSelectPage(tab.index) }
+                        )
+                        .testTag(tab.testTag),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                        contentDescription = tab.contentDesc,
+                        tint = if (isSelected) animatedAccent else TextSecondary,
+                        modifier = Modifier
+                            .size(21.dp)
+                            .scale(iconScale)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = tab.label,
+                        color = if (isSelected) TextPrimary else TextSecondary,
+                        fontSize = 10.5.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
+            }
+        }
     }
 }

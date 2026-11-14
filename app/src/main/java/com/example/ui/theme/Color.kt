@@ -3,12 +3,13 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Dark Liquid Glass & Neumorphism Cyber Palette
-val DeepVoidBlack = Color(0xFF090C10)
-val DarkSurfaceElevated = Color(0xFF0D1117)
-val GlassSurface = Color(0xFF161B22)
-val GlassSurfaceVariant = Color(0xFF21262D)
-val GlassBorder = Color(0x1FFFFFFF)
-val GlassBorderLuminous = Color(0x3300E5FF)
+val DeepVoidBlack = Color(0xFF06080D)
+val DarkSurfaceElevated = Color(0xFF0C1018)
+val GlassSurface = Color(0xCC131924)
+val GlassSurfaceVariant = Color(0xE61B2332)
+val GlassBorder = Color(0x24FFFFFF)
+val GlassBorderLuminous = Color(0x4D00E5FF)
+val GlassTopSpecular = Color(0x33FFFFFF)
 
 // Vibrant Cyber Accents
 val ElectricCyan = Color(0xFF00E5FF)

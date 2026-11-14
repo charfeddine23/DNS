@@ -27,15 +27,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
-import com.example.BuildConfig
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -58,23 +54,24 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.ui.components.ExpertModeBottomSheet
 import com.example.ui.components.GlassCard
-import com.example.ui.theme.DarkSurfaceElevated
 import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.GlassSurface
 import com.example.ui.theme.GlassSurfaceVariant
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.utils.PrivateDnsController
+import com.example.viewmodel.DnsPulseViewModel
+import com.example.viewmodel.HomeUiState
 
 @Composable
 fun SettingsScreen(
-    uiState: com.example.viewmodel.HomeUiState,
-    viewModel: com.example.viewmodel.DnsPulseViewModel,
+    uiState: HomeUiState,
+    viewModel: DnsPulseViewModel,
     onLaunchWirelessSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -90,7 +87,7 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepVoidBlack)
+            .background(Color.Transparent)
             .padding(horizontal = 16.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -100,15 +97,18 @@ fun SettingsScreen(
             text = "Settings & Diagnostics",
             color = TextPrimary,
             fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.ExtraBold
         )
         Text(
-            text = "Configure engine behaviors, theme glows, and access permissions",
+            text = "Configure engine behaviors, living aura, and access permissions",
             color = TextSecondary,
             fontSize = 12.sp
         )
 
         Spacer(modifier = Modifier.height(18.dp))
+
+        SectionLabel("NETWORK & SYSTEM")
+        Spacer(modifier = Modifier.height(8.dp))
 
         // System Private DNS shortcut card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -123,13 +123,14 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(ElectricCyan.copy(alpha = 0.15f), CircleShape),
+                            .size(40.dp)
+                            .background(ElectricCyan.copy(alpha = 0.15f), CircleShape)
+                            .border(1.dp, ElectricCyan.copy(alpha = 0.35f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                            contentDescription = null,
+                            contentDescription = "Open Network Settings",
                             tint = ElectricCyan,
                             modifier = Modifier.size(20.dp)
                         )
@@ -152,26 +153,30 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Shizuku / ADB Helper Card
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            breathingGlow = PrivateDnsController.hasWriteSecureSettingsPermission(context)
+        ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Box(
                             modifier = Modifier
-                                .size(38.dp)
-                                .background(EmeraldMint.copy(alpha = 0.15f), CircleShape),
+                                .size(40.dp)
+                                .background(EmeraldMint.copy(alpha = 0.15f), CircleShape)
+                                .border(1.dp, EmeraldMint.copy(alpha = 0.35f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Security,
-                                contentDescription = null,
+                                contentDescription = "1-Tap Mode",
                                 tint = EmeraldMint,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -202,7 +207,7 @@ fun SettingsScreen(
                             containerColor = ElectricCyan.copy(alpha = 0.15f),
                             contentColor = ElectricCyan
                         ),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.testTag("open_expert_guide_btn")
                     ) {
                         Text("Guide", fontSize = 11.sp)
@@ -214,8 +219,9 @@ fun SettingsScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(GlassSurfaceVariant)
+                        .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
                         .padding(10.dp)
                 ) {
                     Row(
@@ -236,7 +242,7 @@ fun SettingsScreen(
                                 cm.setPrimaryClip(ClipData.newPlainText("ADB Command", adbCmd))
                                 Toast.makeText(context, "Command copied!", Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.size(28.dp).testTag("copy_adb_cmd_settings_btn")
+                            modifier = Modifier.size(32.dp).testTag("copy_adb_cmd_settings_btn")
                         ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = ElectricCyan, modifier = Modifier.size(16.dp))
                         }
@@ -245,7 +251,9 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(18.dp))
+        SectionLabel("ENGINE & AUTOMATION")
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Preferences Toggles
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -288,13 +296,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Liquid Glass Radial Glow",
+                            text = "Breathing Aurora & Glow",
                             color = TextPrimary,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "High-fidelity neon pulse aura animations",
+                            text = "Living atmospheric nebula & energy pulse field",
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
@@ -312,10 +320,13 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Background Keep-Alive / Battery Optimization Card
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            breathingGlow = isBatteryUnrestricted
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -332,19 +343,18 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    val accent = if (isBatteryUnrestricted) EmeraldMint else ElectricCyan
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(
-                                (if (isBatteryUnrestricted) EmeraldMint else ElectricCyan).copy(alpha = 0.15f),
-                                CircleShape
-                            ),
+                            .size(40.dp)
+                            .background(accent.copy(alpha = 0.15f), CircleShape)
+                            .border(1.dp, accent.copy(alpha = 0.35f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Tune,
                             contentDescription = "Background Protection",
-                            tint = if (isBatteryUnrestricted) EmeraldMint else ElectricCyan,
+                            tint = accent,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -369,7 +379,9 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(18.dp))
+        SectionLabel("UPDATES & ABOUT")
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Check for Updates Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -385,8 +397,9 @@ fun SettingsScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(ElectricCyan.copy(alpha = 0.15f), CircleShape),
+                            .size(40.dp)
+                            .background(ElectricCyan.copy(alpha = 0.15f), CircleShape)
+                            .border(1.dp, ElectricCyan.copy(alpha = 0.35f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -414,7 +427,7 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // About Developer Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -427,10 +440,8 @@ fun SettingsScreen(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .background(
-                            color = EmeraldMint.copy(alpha = 0.2f),
-                            shape = CircleShape
-                        ),
+                        .background(EmeraldMint.copy(alpha = 0.18f), CircleShape)
+                        .border(1.dp, EmeraldMint.copy(alpha = 0.38f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -464,7 +475,7 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(110.dp))
     }
 
     if (showExpertGuide) {
@@ -475,4 +486,16 @@ fun SettingsScreen(
             onDismiss = { showExpertGuide = false }
         )
     }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        color = ElectricCyan.copy(alpha = 0.85f),
+        fontSize = 10.5.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.2.sp,
+        modifier = Modifier.padding(start = 4.dp)
+    )
 }
