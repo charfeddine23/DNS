@@ -1,8 +1,10 @@
 package com.example
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -24,18 +26,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -79,6 +85,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.data.model.DnsEngineMode
 import com.example.ui.components.BreathingAtmosphere
 import com.example.ui.components.GlassCard
@@ -121,13 +130,50 @@ private data class NavTabSpec(
 class MainActivity : ComponentActivity() {
 
     private val viewModel: DnsPulseViewModel by viewModels()
+    private var isFullScreenEnabled: Boolean = false
 
+    private fun applyFullScreenWindowState(enabled: Boolean) {
+        isFullScreenEnabled = enabled
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (enabled) {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && isFullScreenEnabled) {
+            applyFullScreenWindowState(true)
+        }
+    }
+
+    @OptIn(ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()
+
+            LaunchedEffect(uiState.fullScreenMode) {
+                applyFullScreenWindowState(uiState.fullScreenMode)
+            }
+
             DnsPulseTheme(
                 themeStyle = uiState.themeStyle,
                 simpleMode = uiState.simpleMode
@@ -241,6 +287,12 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    // Keep UI titles, containers, and controls fixed in place even when system bars hide in Full Screen
+                    val stableSafeInsets = WindowInsets.systemBarsIgnoringVisibility
+                        .union(WindowInsets.displayCutout)
+                        .union(WindowInsets.ime)
+                    val stableNavInsets = WindowInsets.navigationBarsIgnoringVisibility
+
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         containerColor = Color.Transparent,
@@ -250,7 +302,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(bottom = 86.dp)
                             )
                         },
-                        contentWindowInsets = WindowInsets.safeDrawing
+                        contentWindowInsets = stableSafeInsets
                     ) { innerPadding ->
                         Box(
                             modifier = Modifier
@@ -335,7 +387,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            // Floating Glass Slide Dock pinned cleanly above system navigation bar
+                            // Floating Glass Slide Dock pinned cleanly above system navigation bar (stays fixed in Full Screen)
                             FloatingPulseNavBar(
                                 currentPage = pagerState.currentPage,
                                 continuousPagePosition = continuousPagePos,
@@ -343,7 +395,7 @@ class MainActivity : ComponentActivity() {
                                 onSelectPage = slideToPage,
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
-                                    .windowInsetsPadding(WindowInsets.navigationBars)
+                                    .windowInsetsPadding(stableNavInsets)
                                     .padding(horizontal = 20.dp, vertical = 14.dp)
                             )
                         }

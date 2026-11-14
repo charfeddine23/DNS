@@ -6,4 +6,6 @@
     <string name="dev_info_studio_badge">PULSE TECH</string>
     <string name="simple_mode_title">الوضع العادي (Simple Mode)</string>
     <string name="simple_mode_desc">إيقاف التأثيرات والألوان المتحركة والمكدّس لتبسيط الواجهة</string>
+    <string name="full_screen_mode_title">الشاشة الكاملة (Full Screen)</string>
+    <string name="full_screen_mode_desc">توسيع الخلفية فقط لملء الشاشة مع ثبات العناوين والحاويات في مكانها</string>
 </resources>

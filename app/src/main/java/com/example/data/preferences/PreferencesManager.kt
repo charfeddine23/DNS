@@ -22,6 +22,7 @@ class PreferencesManager(private val context: Context) {
         val KEY_GLOW_INTENSITY = booleanPreferencesKey("key_glow_intensity")
         val KEY_THEME_STYLE = stringPreferencesKey("key_theme_style")
         val KEY_SIMPLE_MODE = booleanPreferencesKey("key_simple_mode")
+        val KEY_FULL_SCREEN_MODE = booleanPreferencesKey("key_full_screen_mode")
     }
 
     val engineModeFlow: Flow<DnsEngineMode> = context.dataStore.data.map { prefs ->
@@ -60,6 +61,10 @@ class PreferencesManager(private val context: Context) {
 
     val simpleModeFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_SIMPLE_MODE] ?: false
+    }
+
+    val fullScreenModeFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FULL_SCREEN_MODE] ?: false
     }
 
     suspend fun setEngineMode(mode: DnsEngineMode) {
@@ -101,6 +106,12 @@ class PreferencesManager(private val context: Context) {
     suspend fun setSimpleMode(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_SIMPLE_MODE] = enabled
+        }
+    }
+
+    suspend fun setFullScreenMode(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_FULL_SCREEN_MODE] = enabled
         }
     }
 }

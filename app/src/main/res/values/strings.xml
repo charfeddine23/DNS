@@ -22,4 +22,6 @@
     <string name="dev_info_studio_badge">PULSE TECH</string>
     <string name="simple_mode_title">Simple Mode</string>
     <string name="simple_mode_desc">Disable animations, stacks &amp; visual effects for a clean UI</string>
+    <string name="full_screen_mode_title">Full Screen Mode</string>
+    <string name="full_screen_mode_desc">Expand background edge-to-edge while keeping layout &amp; titles fixed</string>
 </resources>

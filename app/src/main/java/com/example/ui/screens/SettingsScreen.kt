@@ -295,6 +295,49 @@ fun SettingsScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Full Screen Background Card
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            borderColor = if (uiState.fullScreenMode) ElectricCyan.copy(alpha = 0.45f) else GlassBorder
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.setFullScreenMode(!uiState.fullScreenMode) }
+                    .padding(16.dp)
+                    .testTag("full_screen_mode_card"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(
+                        text = stringResource(R.string.full_screen_mode_title),
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.full_screen_mode_desc),
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+                Switch(
+                    checked = uiState.fullScreenMode,
+                    onCheckedChange = { viewModel.setFullScreenMode(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = DeepVoidBlack,
+                        checkedTrackColor = ElectricCyan
+                    ),
+                    modifier = Modifier.testTag("full_screen_mode_switch")
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(18.dp))
         SectionLabel("ENGINE & AUTOMATION")
         Spacer(modifier = Modifier.height(8.dp))

@@ -51,6 +51,7 @@ data class HomeUiState(
     val autoStartBoot: Boolean = false,
     val ambientGlow: Boolean = true,
     val simpleMode: Boolean = false,
+    val fullScreenMode: Boolean = false,
     val themeStyle: AppThemeStyle = AppThemeStyle.CHROMATIC_FROSTED_LIQUID,
     val updateState: UpdateDownloadState = UpdateDownloadState.Idle,
     val showUpdateDialog: Boolean = false
@@ -111,6 +112,11 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.simpleModeFlow.collect { enabled ->
                 _uiState.value = _uiState.value.copy(simpleMode = enabled)
+            }
+        }
+        viewModelScope.launch {
+            prefs.fullScreenModeFlow.collect { enabled ->
+                _uiState.value = _uiState.value.copy(fullScreenMode = enabled)
             }
         }
     }
@@ -180,6 +186,13 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.setSimpleMode(enabled)
             _uiState.value = _uiState.value.copy(simpleMode = enabled)
+        }
+    }
+
+    fun setFullScreenMode(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setFullScreenMode(enabled)
+            _uiState.value = _uiState.value.copy(fullScreenMode = enabled)
         }
     }
 
