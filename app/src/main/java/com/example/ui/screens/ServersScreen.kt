@@ -53,9 +53,9 @@ import com.example.ui.components.GlassCard
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonPulse
 import com.example.ui.theme.DarkSurfaceElevated
-import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
+import com.example.ui.theme.OnAccentInk
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassBorderLuminous
 import com.example.ui.theme.GlassSurfaceVariant
@@ -440,7 +440,7 @@ fun AddCustomServerSheet(
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = ElectricCyan,
-                    contentColor = DeepVoidBlack
+                    contentColor = OnAccentInk
                 )
             ) {
                 Text("Save Server Profile", fontWeight = FontWeight.Bold)

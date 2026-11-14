@@ -39,7 +39,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
@@ -76,13 +79,15 @@ import com.example.BuildConfig
 import com.example.R
 import com.example.ui.components.GlassCard
 import com.example.ui.components.MultiThemeEngineSheet
-import com.example.ui.theme.DeepVoidBlack
+import com.example.ui.theme.AppAppearanceMode
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.HoloMagenta
 import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalSimpleMode
+import com.example.ui.theme.OnAccentInk
+import com.example.ui.theme.SubtleSurfaceFill
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.viewmodel.DnsPulseViewModel
@@ -178,6 +183,14 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(18.dp))
         SectionLabel("APPEARANCE & MULTI-THEME ENGINE")
         Spacer(modifier = Modifier.height(8.dp))
+
+        AppearanceModeSelectorCard(
+            selectedMode = uiState.appearanceMode,
+            simpleMode = simpleMode,
+            onSelectMode = { viewModel.setAppearanceMode(it) }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Multi-Theme Engine Card
         GlassCard(
@@ -287,7 +300,7 @@ fun SettingsScreen(
                     checked = uiState.simpleMode,
                     onCheckedChange = { viewModel.setSimpleMode(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = DeepVoidBlack,
+                        checkedThumbColor = OnAccentInk,
                         checkedTrackColor = EmeraldMint
                     ),
                     modifier = Modifier.testTag("simple_mode_switch")
@@ -330,7 +343,7 @@ fun SettingsScreen(
                     checked = uiState.fullScreenMode,
                     onCheckedChange = { viewModel.setFullScreenMode(it) },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = DeepVoidBlack,
+                        checkedThumbColor = OnAccentInk,
                         checkedTrackColor = ElectricCyan
                     ),
                     modifier = Modifier.testTag("full_screen_mode_switch")
@@ -367,7 +380,7 @@ fun SettingsScreen(
                         checked = uiState.autoStartBoot,
                         onCheckedChange = { viewModel.setAutoStartBoot(it) },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = DeepVoidBlack,
+                            checkedThumbColor = OnAccentInk,
                             checkedTrackColor = ElectricCyan
                         ),
                         modifier = Modifier.testTag("boot_switch")
@@ -403,7 +416,7 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.setAmbientGlow(it) },
                         enabled = !simpleMode,
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = DeepVoidBlack,
+                            checkedThumbColor = OnAccentInk,
                             checkedTrackColor = ElectricCyan
                         ),
                         modifier = Modifier.testTag("glow_switch")
@@ -595,6 +608,9 @@ private fun DeveloperShowcaseCard() {
     val shape = RoundedCornerShape(24.dp)
     val shiftX = (cos(sweepPhase) + 1f) * 0.5f
     val shiftY = (sin(sweepPhase) + 1f) * 0.5f
+    val devCyan = ElectricCyan
+    val devViolet = HoloViolet
+    val devEmerald = EmeraldMint
 
     GlassCard(
         modifier = Modifier
@@ -633,9 +649,9 @@ private fun DeveloperShowcaseCard() {
                                     brush = Brush.linearGradient(
                                         colors = listOf(
                                             Color.Transparent,
-                                            ElectricCyan.copy(alpha = 0.09f * pulseGlow),
-                                            HoloViolet.copy(alpha = 0.08f * pulseGlow),
-                                            EmeraldMint.copy(alpha = 0.06f * pulseGlow),
+                                            devCyan.copy(alpha = 0.09f * pulseGlow),
+                                            devViolet.copy(alpha = 0.08f * pulseGlow),
+                                            devEmerald.copy(alpha = 0.06f * pulseGlow),
                                             Color.Transparent
                                         ),
                                         start = Offset(
@@ -690,8 +706,8 @@ private fun DeveloperShowcaseCard() {
                                 drawCircle(
                                     brush = Brush.radialGradient(
                                         colors = listOf(
-                                            ElectricCyan.copy(alpha = 0.34f * pulseGlow),
-                                            EmeraldMint.copy(alpha = 0.14f),
+                                            devCyan.copy(alpha = 0.34f * pulseGlow),
+                                            devEmerald.copy(alpha = 0.14f),
                                             Color.Transparent
                                         )
                                     ),
@@ -699,7 +715,7 @@ private fun DeveloperShowcaseCard() {
                                     center = c
                                 )
                                 drawArc(
-                                    color = ElectricCyan.copy(alpha = 0.9f),
+                                    color = devCyan.copy(alpha = 0.9f),
                                     startAngle = orbitRotation,
                                     sweepAngle = 110f,
                                     useCenter = false,
@@ -708,7 +724,7 @@ private fun DeveloperShowcaseCard() {
                                     style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
                                 )
                                 drawArc(
-                                    color = EmeraldMint.copy(alpha = 0.85f),
+                                    color = devEmerald.copy(alpha = 0.85f),
                                     startAngle = orbitRotation + 180f,
                                     sweepAngle = 95f,
                                     useCenter = false,
@@ -834,7 +850,7 @@ private fun DevTelemetryTile(
                 brush = Brush.verticalGradient(
                     colors = listOf(
                         accent.copy(alpha = 0.14f),
-                        Color.White.copy(alpha = 0.04f)
+                        SubtleSurfaceFill
                     )
                 )
             )
@@ -859,6 +875,107 @@ private fun DevTelemetryTile(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+@Composable
+private fun AppearanceModeSelectorCard(
+    selectedMode: AppAppearanceMode,
+    simpleMode: Boolean,
+    onSelectMode: (AppAppearanceMode) -> Unit
+) {
+    val options = remember {
+        listOf(
+            Triple(AppAppearanceMode.DARK, Icons.Default.DarkMode, R.string.appearance_mode_dark),
+            Triple(AppAppearanceMode.LIGHT, Icons.Default.LightMode, R.string.appearance_mode_light),
+            Triple(AppAppearanceMode.SYSTEM, Icons.Default.SettingsBrightness, R.string.appearance_mode_system)
+        )
+    }
+
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("appearance_mode_card"),
+        cornerRadius = 18.dp,
+        borderColor = ElectricCyan.copy(alpha = 0.35f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            options.forEach { (mode, icon, labelRes) ->
+                val isSelected = selectedMode == mode
+                val interactionSource = remember { MutableInteractionSource() }
+                val scale = if (simpleMode) {
+                    1f
+                } else {
+                    val animScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1f else 0.97f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        label = "appearance_scale_${mode.name}"
+                    )
+                    animScale
+                }
+
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .scale(scale)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(
+                            brush = if (isSelected) {
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        ElectricCyan.copy(alpha = 0.22f),
+                                        EmeraldMint.copy(alpha = 0.14f)
+                                    )
+                                )
+                            } else {
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        SubtleSurfaceFill,
+                                        SubtleSurfaceFill
+                                    )
+                                )
+                            }
+                        )
+                        .border(
+                            width = if (isSelected) 1.2.dp else 0.8.dp,
+                            color = if (isSelected) ElectricCyan.copy(alpha = 0.65f) else GlassBorder,
+                            shape = RoundedCornerShape(13.dp)
+                        )
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = ripple(color = ElectricCyan),
+                            onClick = { onSelectMode(mode) }
+                        )
+                        .padding(horizontal = 6.dp)
+                        .testTag("appearance_mode_${mode.testTagSuffix}"),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = stringResource(labelRes),
+                        tint = if (isSelected) ElectricCyan else TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = stringResource(labelRes),
+                        color = if (isSelected) TextPrimary else TextSecondary,
+                        fontSize = 11.5.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
     }
 }
 

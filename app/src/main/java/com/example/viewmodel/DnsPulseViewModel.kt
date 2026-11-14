@@ -15,6 +15,7 @@ import com.example.domain.usecase.BenchmarkDnsServersUseCase
 import com.example.service.DnsVpnService
 import com.example.service.ShizukuDnsBridgeService
 import com.example.service.ShizukuStatus
+import com.example.ui.theme.AppAppearanceMode
 import com.example.ui.theme.AppThemeStyle
 import com.example.utils.GitHubReleaseInfo
 import com.example.utils.LatencyTester
@@ -53,6 +54,7 @@ data class HomeUiState(
     val simpleMode: Boolean = false,
     val fullScreenMode: Boolean = false,
     val themeStyle: AppThemeStyle = AppThemeStyle.CHROMATIC_FROSTED_LIQUID,
+    val appearanceMode: AppAppearanceMode = AppAppearanceMode.DARK,
     val updateState: UpdateDownloadState = UpdateDownloadState.Idle,
     val showUpdateDialog: Boolean = false
 )
@@ -107,6 +109,11 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.themeStyleFlow.collect { style ->
                 _uiState.value = _uiState.value.copy(themeStyle = style)
+            }
+        }
+        viewModelScope.launch {
+            prefs.appearanceModeFlow.collect { mode ->
+                _uiState.value = _uiState.value.copy(appearanceMode = mode)
             }
         }
         viewModelScope.launch {
@@ -179,6 +186,13 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.setThemeStyle(style)
             _uiState.value = _uiState.value.copy(themeStyle = style)
+        }
+    }
+
+    fun setAppearanceMode(mode: AppAppearanceMode) {
+        viewModelScope.launch {
+            prefs.setAppearanceMode(mode)
+            _uiState.value = _uiState.value.copy(appearanceMode = mode)
         }
     }
 

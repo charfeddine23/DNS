@@ -52,9 +52,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.PrivateDnsPreset
-import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
+import com.example.ui.theme.OnAccentInk
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassBorderLuminous
 import com.example.ui.theme.GlassSurfaceVariant
@@ -235,7 +235,7 @@ fun PrivateDnsShieldCard(
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.Transparent,
-                    contentColor = DeepVoidBlack
+                    contentColor = OnAccentInk
                 ),
                 contentPadding = PaddingValues(0.dp)
             ) {
@@ -259,7 +259,7 @@ fun PrivateDnsShieldCard(
                             imageVector = Icons.Default.Shield,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
-                            tint = DeepVoidBlack
+                            tint = OnAccentInk
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -269,7 +269,7 @@ fun PrivateDnsShieldCard(
                                 "One-Tap AdGuard (dns.adguard.com)",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
-                            color = DeepVoidBlack
+                            color = OnAccentInk
                         )
                     }
                 }

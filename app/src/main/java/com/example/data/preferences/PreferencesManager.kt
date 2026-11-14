@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.data.model.DnsEngineMode
+import com.example.ui.theme.AppAppearanceMode
 import com.example.ui.theme.AppThemeStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -21,6 +22,7 @@ class PreferencesManager(private val context: Context) {
         val KEY_SELECTED_DOT_PRESET = stringPreferencesKey("key_selected_dot_preset")
         val KEY_GLOW_INTENSITY = booleanPreferencesKey("key_glow_intensity")
         val KEY_THEME_STYLE = stringPreferencesKey("key_theme_style")
+        val KEY_APPEARANCE_MODE = stringPreferencesKey("key_appearance_mode")
         val KEY_SIMPLE_MODE = booleanPreferencesKey("key_simple_mode")
         val KEY_FULL_SCREEN_MODE = booleanPreferencesKey("key_full_screen_mode")
     }
@@ -56,6 +58,15 @@ class PreferencesManager(private val context: Context) {
             AppThemeStyle.valueOf(raw)
         } catch (_: Exception) {
             AppThemeStyle.CHROMATIC_FROSTED_LIQUID
+        }
+    }
+
+    val appearanceModeFlow: Flow<AppAppearanceMode> = context.dataStore.data.map { prefs ->
+        val raw = prefs[KEY_APPEARANCE_MODE] ?: AppAppearanceMode.DARK.name
+        try {
+            AppAppearanceMode.valueOf(raw)
+        } catch (_: Exception) {
+            AppAppearanceMode.DARK
         }
     }
 
@@ -100,6 +111,12 @@ class PreferencesManager(private val context: Context) {
     suspend fun setThemeStyle(style: AppThemeStyle) {
         context.dataStore.edit { prefs ->
             prefs[KEY_THEME_STYLE] = style.name
+        }
+    }
+
+    suspend fun setAppearanceMode(mode: AppAppearanceMode) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_APPEARANCE_MODE] = mode.name
         }
     }
 

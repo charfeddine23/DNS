@@ -105,6 +105,7 @@ import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassTopSpecular
 import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.NeuBaseDark
 import com.example.ui.theme.TextPrimary
@@ -212,8 +213,15 @@ class MainActivity : ComponentActivity() {
 
             DnsPulseTheme(
                 themeStyle = uiState.themeStyle,
+                appearanceMode = uiState.appearanceMode,
                 simpleMode = uiState.simpleMode
             ) {
+                val isDarkTheme = LocalIsDarkTheme.current
+                LaunchedEffect(isDarkTheme) {
+                    val controller = WindowCompat.getInsetsController(window, window.decorView)
+                    controller.isAppearanceLightStatusBars = !isDarkTheme
+                    controller.isAppearanceLightNavigationBars = !isDarkTheme
+                }
                 val snackbarHostState = remember { SnackbarHostState() }
                 val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
                 val coroutineScope = rememberCoroutineScope()

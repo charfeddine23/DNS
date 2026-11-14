@@ -57,6 +57,8 @@ import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassSurface
 import com.example.ui.theme.GlassSurfaceVariant
 import com.example.ui.theme.LocalSimpleMode
+import com.example.ui.theme.SubtleSurfaceBorder
+import com.example.ui.theme.SubtleSurfaceFill
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
@@ -151,14 +153,14 @@ fun DnsServerCard(
                                 colors = if (isSelected) {
                                     listOf(ElectricCyan.copy(alpha = 0.28f), ElectricCyan.copy(alpha = 0.08f))
                                 } else {
-                                    listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.04f))
+                                    listOf(SubtleSurfaceFill, SubtleSurfaceFill.copy(alpha = 0.04f))
                                 }
                             ),
                             shape = CircleShape
                         )
                         .border(
                             width = 1.dp,
-                            color = if (isSelected) ElectricCyan.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.08f),
+                            color = if (isSelected) ElectricCyan.copy(alpha = 0.5f) else SubtleSurfaceBorder,
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -241,7 +243,7 @@ fun DnsServerCard(
                         .fillMaxWidth()
                         .height(3.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(Color.White.copy(alpha = 0.06f))
+                        .background(SubtleSurfaceFill)
                 ) {
                     Box(
                         modifier = Modifier

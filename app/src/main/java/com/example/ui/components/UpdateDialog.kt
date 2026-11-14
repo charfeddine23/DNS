@@ -67,12 +67,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.BuildConfig
 import com.example.R
-import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.LocalSimpleMode
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.UpdateBorder
 import com.example.ui.theme.UpdateCardInner
 import com.example.ui.theme.UpdateCardSurface
+import com.example.ui.theme.UpdateTextPrimary
+import com.example.ui.theme.UpdateTextSecondary
 import com.example.ui.theme.UpdateCloseGray
 import com.example.ui.theme.UpdateCrimson
 import com.example.ui.theme.UpdateCrimsonBright
@@ -143,7 +143,7 @@ fun UpdateDialog(
                         brush = Brush.verticalGradient(
                             colors = listOf(
                                 UpdateCrimson.copy(alpha = 0.55f),
-                                GlassBorder,
+                                UpdateBorder,
                                 Color.White.copy(alpha = 0.06f)
                             )
                         ),
@@ -252,7 +252,7 @@ fun UpdateDialog(
                                     is UpdateDownloadState.Checking -> {
                                         Text(
                                             text = stringResource(R.string.update_title_checking),
-                                            color = TextPrimary,
+                                            color = UpdateTextPrimary,
                                             fontSize = 20.sp,
                                             fontWeight = FontWeight.Bold,
                                             textAlign = TextAlign.Center
@@ -278,7 +278,7 @@ fun UpdateDialog(
                                         val release = updateState.release
                                         Text(
                                             text = stringResource(R.string.update_title_available),
-                                            color = TextPrimary,
+                                            color = UpdateTextPrimary,
                                             fontSize = 22.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             textAlign = TextAlign.Center
@@ -321,7 +321,7 @@ fun UpdateDialog(
                                             ) {
                                                 Text(
                                                     text = customNotes,
-                                                    color = TextSecondary,
+                                                    color = UpdateTextSecondary,
                                                     fontSize = 13.sp,
                                                     lineHeight = 19.sp,
                                                     textAlign = TextAlign.Center
@@ -336,7 +336,7 @@ fun UpdateDialog(
                                                         append(formatBytes(release.apkSizeBytes))
                                                     }
                                                 },
-                                                color = TextSecondary,
+                                                color = UpdateTextSecondary,
                                                 fontSize = 14.sp,
                                                 textAlign = TextAlign.Center
                                             )
@@ -371,7 +371,7 @@ fun UpdateDialog(
 
                                         Text(
                                             text = stringResource(R.string.update_title_downloading),
-                                            color = TextPrimary,
+                                            color = UpdateTextPrimary,
                                             fontSize = 21.sp,
                                             fontWeight = FontWeight.Bold,
                                             textAlign = TextAlign.Center
@@ -421,7 +421,7 @@ fun UpdateDialog(
                                                     )
                                                     Text(
                                                         text = "${formatBytes(updateState.downloadedBytes)} / ${formatBytes(updateState.totalBytes)}",
-                                                        color = TextSecondary,
+                                                        color = UpdateTextSecondary,
                                                         fontSize = 12.sp,
                                                         fontFamily = FontFamily.Monospace
                                                     )
@@ -440,7 +440,7 @@ fun UpdateDialog(
                                             if (isConnecting) {
                                                 Text(
                                                     text = stringResource(R.string.update_connecting),
-                                                    color = TextSecondary,
+                                                    color = UpdateTextSecondary,
                                                     fontSize = 12.5.sp,
                                                     textAlign = TextAlign.Center
                                                 )
@@ -452,7 +452,7 @@ fun UpdateDialog(
                                                     } else {
                                                         formatBytes(updateState.downloadedBytes)
                                                     },
-                                                    color = TextSecondary,
+                                                    color = UpdateTextSecondary,
                                                     fontSize = 12.sp,
                                                     fontFamily = FontFamily.Monospace
                                                 )
@@ -466,7 +466,7 @@ fun UpdateDialog(
                                         ) {
                                             Text(
                                                 text = stringResource(R.string.update_cancel_download),
-                                                color = TextSecondary,
+                                                color = UpdateTextSecondary,
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Medium
                                             )
@@ -476,7 +476,7 @@ fun UpdateDialog(
                                     is UpdateDownloadState.ReadyToInstall -> {
                                         Text(
                                             text = stringResource(R.string.update_title_ready),
-                                            color = TextPrimary,
+                                            color = UpdateTextPrimary,
                                             fontSize = 21.sp,
                                             fontWeight = FontWeight.Bold,
                                             textAlign = TextAlign.Center
@@ -486,7 +486,7 @@ fun UpdateDialog(
 
                                         Text(
                                             text = stringResource(R.string.update_description_available),
-                                            color = TextSecondary,
+                                            color = UpdateTextSecondary,
                                             fontSize = 14.sp,
                                             textAlign = TextAlign.Center
                                         )
@@ -509,7 +509,7 @@ fun UpdateDialog(
                                                     R.string.update_title_error
                                                 }
                                             ),
-                                            color = TextPrimary,
+                                            color = UpdateTextPrimary,
                                             fontSize = 20.sp,
                                             fontWeight = FontWeight.Bold,
                                             textAlign = TextAlign.Center
@@ -519,7 +519,7 @@ fun UpdateDialog(
 
                                         Text(
                                             text = updateState.message,
-                                            color = TextSecondary,
+                                            color = UpdateTextSecondary,
                                             fontSize = 13.sp,
                                             lineHeight = 19.sp,
                                             textAlign = TextAlign.Center
@@ -759,7 +759,7 @@ private fun UpdateRocketEmblem(isAnimating: Boolean) {
 
         val winCenter = Offset(cx, rCy - h * 0.035f)
         drawCircle(
-            color = TextSecondary,
+            color = UpdateTextSecondary,
             radius = rW * 0.30f,
             center = winCenter
         )

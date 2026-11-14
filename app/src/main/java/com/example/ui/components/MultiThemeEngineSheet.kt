@@ -45,17 +45,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.AppThemeStyle
-import com.example.ui.theme.ChromaticCyan
-import com.example.ui.theme.ChromaticMagenta
 import com.example.ui.theme.DarkSurfaceElevated
-import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
-import com.example.ui.theme.EmeraldMint
-import com.example.ui.theme.HoloMagenta
 import com.example.ui.theme.HoloViolet
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.NeuBaseDark
+import com.example.ui.theme.OnAccentInk
+import com.example.ui.theme.SubtleSurfaceBorder
+import com.example.ui.theme.SubtleSurfaceFill
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.paletteForTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,7 +108,7 @@ fun MultiThemeEngineSheet(
                         fontWeight = FontWeight.ExtraBold
                     )
                     Text(
-                        text = "Real-time optical surface & backdrop synthesizer",
+                        text = "10 optical themes • Adapts smoothly to Dark & Light",
                         color = TextSecondary,
                         fontSize = 11.5.sp
                     )
@@ -136,6 +136,9 @@ private fun ThemeOptionCard(
     isSelected: Boolean,
     onSelect: () -> Unit
 ) {
+    val isDark = LocalIsDarkTheme.current
+    val previewPalette = remember(style, isDark) { paletteForTheme(style, isDark) }
+
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -145,11 +148,16 @@ private fun ThemeOptionCard(
     )
 
     val badgeColor = when (style) {
-        AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> ChromaticCyan
-        AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> HoloMagenta
-        AppThemeStyle.FROSTED_GLASSMORPHISM -> Color(0xFF8BE0FF)
-        AppThemeStyle.GLASS_PSD_MOCKUP -> Color(0xFF6BA6FF)
-        AppThemeStyle.NEUMORPHISM -> EmeraldMint
+        AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> previewPalette.primaryAccent
+        AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> previewPalette.secondaryGlowAccent
+        AppThemeStyle.FROSTED_GLASSMORPHISM -> if (isDark) Color(0xFF8BE0FF) else previewPalette.primaryAccent
+        AppThemeStyle.GLASS_PSD_MOCKUP -> if (isDark) Color(0xFF6BA6FF) else previewPalette.primaryAccent
+        AppThemeStyle.NEUMORPHISM -> previewPalette.emeraldAccent
+        AppThemeStyle.TOKYO_NIGHT -> previewPalette.primaryAccent
+        AppThemeStyle.CATPPUCCIN_MOCHA -> previewPalette.tertiaryAccent
+        AppThemeStyle.SYNTHWAVE_84 -> previewPalette.secondaryGlowAccent
+        AppThemeStyle.NORD -> previewPalette.primaryAccent
+        AppThemeStyle.DRACULA_PRO -> previewPalette.primaryAccent
     }
 
     GlassCard(
@@ -157,7 +165,7 @@ private fun ThemeOptionCard(
             .fillMaxWidth()
             .scale(scale),
         cornerRadius = 18.dp,
-        borderColor = if (isSelected) ElectricCyan else badgeColor.copy(alpha = 0.35f),
+        borderColor = if (isSelected) previewPalette.primaryAccent else badgeColor.copy(alpha = 0.38f),
         borderWidth = if (isSelected) 1.6.dp else 1.dp,
         breathingGlow = isSelected,
         overrideThemeStyle = style
@@ -174,8 +182,7 @@ private fun ThemeOptionCard(
                 .testTag("theme_option_${style.name}"),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Optical Swatch Preview Orb
-            ThemeSwatchOrb(style = style)
+            ThemeSwatchOrb(style = style, isDark = isDark)
 
             Spacer(modifier = Modifier.width(14.dp))
 
@@ -186,7 +193,7 @@ private fun ThemeOptionCard(
                 ) {
                     Text(
                         text = style.displayName,
-                        color = TextPrimary,
+                        color = previewPalette.textPrimary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -209,7 +216,7 @@ private fun ThemeOptionCard(
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = style.description,
-                    color = TextSecondary,
+                    color = previewPalette.textSecondary,
                     fontSize = 11.sp,
                     lineHeight = 15.sp
                 )
@@ -221,10 +228,10 @@ private fun ThemeOptionCard(
                 modifier = Modifier
                     .size(26.dp)
                     .clip(CircleShape)
-                    .background(if (isSelected) ElectricCyan else Color.White.copy(alpha = 0.07f))
+                    .background(if (isSelected) ElectricCyan else SubtleSurfaceFill)
                     .border(
                         width = 1.dp,
-                        color = if (isSelected) ElectricCyan else Color.White.copy(alpha = 0.16f),
+                        color = if (isSelected) ElectricCyan else SubtleSurfaceBorder,
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
@@ -233,7 +240,7 @@ private fun ThemeOptionCard(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Selected",
-                        tint = DeepVoidBlack,
+                        tint = OnAccentInk,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -243,13 +250,14 @@ private fun ThemeOptionCard(
 }
 
 @Composable
-private fun ThemeSwatchOrb(style: AppThemeStyle) {
+private fun ThemeSwatchOrb(style: AppThemeStyle, isDark: Boolean) {
+    val palette = remember(style, isDark) { paletteForTheme(style, isDark) }
     val brush = when (style) {
         AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> Brush.sweepGradient(
-            listOf(ChromaticCyan, ChromaticMagenta, Color(0xFFFFD166), ChromaticCyan)
+            listOf(palette.primaryAccent, palette.secondaryGlowAccent, palette.amberAccent, palette.primaryAccent)
         )
         AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> Brush.sweepGradient(
-            listOf(ElectricCyan, HoloViolet, HoloMagenta, EmeraldMint, ElectricCyan)
+            listOf(palette.primaryAccent, palette.tertiaryAccent, palette.secondaryGlowAccent, palette.emeraldAccent, palette.primaryAccent)
         )
         AppThemeStyle.FROSTED_GLASSMORPHISM -> Brush.verticalGradient(
             listOf(Color(0xFFE0F4FF), Color(0xFF4CA5D9))
@@ -258,7 +266,22 @@ private fun ThemeSwatchOrb(style: AppThemeStyle) {
             listOf(Color(0xFFFFFFFF), Color(0xFF3A86FF), Color(0xFF0A1428))
         )
         AppThemeStyle.NEUMORPHISM -> Brush.linearGradient(
-            listOf(Color(0xFF2D3445), Color(0xFF171B24), Color(0xFF090B10))
+            listOf(palette.neuHighlightEdge, palette.neuBase, palette.neuShadowEdge)
+        )
+        AppThemeStyle.TOKYO_NIGHT -> Brush.sweepGradient(
+            listOf(Color(0xFF7DCFFF), Color(0xFF7AA2F7), Color(0xFFBB9AF7), Color(0xFF73DACA), Color(0xFF7DCFFF))
+        )
+        AppThemeStyle.CATPPUCCIN_MOCHA -> Brush.sweepGradient(
+            listOf(Color(0xFFCBA6F7), Color(0xFF89B4FA), Color(0xFFFAB387), Color(0xFFA6E3A1), Color(0xFFCBA6F7))
+        )
+        AppThemeStyle.SYNTHWAVE_84 -> Brush.sweepGradient(
+            listOf(Color(0xFFFF7EDB), Color(0xFF36F9F6), Color(0xFFFEDE5D), Color(0xFF241B2F), Color(0xFFFF7EDB))
+        )
+        AppThemeStyle.NORD -> Brush.linearGradient(
+            listOf(Color(0xFFECEFF4), Color(0xFF88C0D0), Color(0xFF5E81AC), Color(0xFF2E3440))
+        )
+        AppThemeStyle.DRACULA_PRO -> Brush.sweepGradient(
+            listOf(Color(0xFF9580FF), Color(0xFF80FFEA), Color(0xFF8AFF80), Color(0xFFFF80BF), Color(0xFF9580FF))
         )
     }
 
@@ -267,6 +290,6 @@ private fun ThemeSwatchOrb(style: AppThemeStyle) {
             .size(38.dp)
             .clip(CircleShape)
             .background(brush)
-            .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
+            .border(1.dp, SubtleSurfaceBorder, CircleShape)
     )
 }

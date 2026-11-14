@@ -60,21 +60,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.AppThemeStyle
-import com.example.ui.theme.ChromaticAmber
-import com.example.ui.theme.ChromaticCyan
-import com.example.ui.theme.ChromaticMagenta
 import com.example.ui.theme.CrimsonPulse
+import com.example.ui.theme.DarkSurfaceElevated
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
-import com.example.ui.theme.FrostedBorder
-import com.example.ui.theme.HoloMagenta
 import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalPulsePalette
 import com.example.ui.theme.LocalSimpleMode
-import com.example.ui.theme.NeuBaseDark
-import com.example.ui.theme.NeuHighlightEdge
-import com.example.ui.theme.NeuShadowEdge
-import com.example.ui.theme.NeuSurfaceLight
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
@@ -89,6 +82,8 @@ fun HeroPulseButton(
 ) {
     val simpleMode = LocalSimpleMode.current
     val themeStyle = LocalAppThemeStyle.current
+    val palette = LocalPulsePalette.current
+    val isDark = palette.isDark
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -109,7 +104,7 @@ fun HeroPulseButton(
                 modifier = Modifier
                     .size(160.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF131820))
+                    .background(DarkSurfaceElevated)
                     .border(2.dp, statusColor.copy(alpha = 0.75f), CircleShape)
                     .clickable(
                         interactionSource = interactionSource,
@@ -228,20 +223,41 @@ fun HeroPulseButton(
 
     val coreFillBrush = when (themeStyle) {
         AppThemeStyle.NEUMORPHISM -> Brush.linearGradient(
-            colors = listOf(NeuSurfaceLight, NeuBaseDark),
+            colors = listOf(palette.neuSurfaceLight, palette.neuBase),
             start = Offset.Zero,
             end = Offset(450f, 450f)
         )
         AppThemeStyle.FROSTED_GLASSMORPHISM -> Brush.radialGradient(
-            colors = listOf(Color(0xFF283A4E), Color(0xFF15202E), Color(0xFF0D141F))
+            colors = if (isDark) {
+                listOf(Color(0xFF283A4E), Color(0xFF15202E), Color(0xFF0D141F))
+            } else {
+                listOf(Color.White, palette.surfaceElevated, palette.glassSurfaceVariant)
+            }
         )
         AppThemeStyle.GLASS_PSD_MOCKUP -> Brush.linearGradient(
-            colors = listOf(Color(0x36FFFFFF), Color(0xE0131C2B), Color(0xFF0B101B)),
+            colors = if (isDark) {
+                listOf(Color(0x36FFFFFF), Color(0xE0131C2B), Color(0xFF0B101B))
+            } else {
+                listOf(Color.White, palette.surfaceElevated, palette.glassSurfaceVariant)
+            },
             start = Offset.Zero,
             end = Offset(420f, 420f)
         )
+        AppThemeStyle.TOKYO_NIGHT,
+        AppThemeStyle.CATPPUCCIN_MOCHA,
+        AppThemeStyle.SYNTHWAVE_84,
+        AppThemeStyle.NORD,
+        AppThemeStyle.DRACULA_PRO -> Brush.radialGradient(
+            colors = listOf(palette.stackCardFront, palette.surfaceElevated, palette.background),
+            center = Offset(120f, 100f),
+            radius = 340f
+        )
         else -> Brush.radialGradient(
-            colors = listOf(Color(0xFF232C3B), Color(0xFF131822), Color(0xFF0A0D14)),
+            colors = if (isDark) {
+                listOf(Color(0xFF232C3B), Color(0xFF131822), Color(0xFF0A0D14))
+            } else {
+                listOf(Color.White, palette.surfaceElevated, palette.glassSurfaceVariant)
+            },
             center = Offset(120f, 100f),
             radius = 340f
         )
@@ -250,23 +266,79 @@ fun HeroPulseButton(
     val coreBorderBrush = when (themeStyle) {
         AppThemeStyle.NEUMORPHISM -> Brush.linearGradient(
             colors = listOf(
-                if (isActive) activeGlowColor.copy(alpha = 0.7f) else NeuHighlightEdge,
-                NeuShadowEdge
+                if (isActive) activeGlowColor.copy(alpha = 0.7f) else palette.neuHighlightEdge,
+                palette.neuShadowEdge
             )
         )
         AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> Brush.sweepGradient(
-            listOf(ElectricCyan, HoloViolet, HoloMagenta, EmeraldMint, ElectricCyan)
+            listOf(
+                palette.primaryAccent,
+                palette.tertiaryAccent,
+                palette.secondaryGlowAccent,
+                palette.emeraldAccent,
+                palette.primaryAccent
+            )
         )
         AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> Brush.sweepGradient(
-            listOf(ChromaticCyan, ChromaticMagenta, ChromaticAmber, activeGlowColor, ChromaticCyan)
+            listOf(
+                palette.primaryAccent,
+                palette.secondaryGlowAccent,
+                palette.amberAccent,
+                activeGlowColor,
+                palette.primaryAccent
+            )
         )
         AppThemeStyle.FROSTED_GLASSMORPHISM -> Brush.verticalGradient(
-            listOf(FrostedBorder, activeGlowColor.copy(alpha = 0.65f), Color.White.copy(alpha = 0.18f))
+            listOf(palette.frostedBorder, activeGlowColor.copy(alpha = 0.65f), palette.glassBorder)
         )
         AppThemeStyle.GLASS_PSD_MOCKUP -> Brush.linearGradient(
-            listOf(Color.White.copy(alpha = 0.65f), activeGlowColor.copy(alpha = 0.7f), Color.White.copy(alpha = 0.12f))
+            listOf(palette.glassTopSpecular, activeGlowColor.copy(alpha = 0.7f), palette.glassBorder)
+        )
+        AppThemeStyle.TOKYO_NIGHT -> Brush.sweepGradient(
+            listOf(
+                palette.primaryAccent,
+                palette.tertiaryAccent,
+                palette.emeraldAccent,
+                activeGlowColor,
+                palette.primaryAccent
+            )
+        )
+        AppThemeStyle.CATPPUCCIN_MOCHA -> Brush.sweepGradient(
+            listOf(
+                palette.tertiaryAccent,
+                palette.primaryAccent,
+                palette.amberAccent,
+                palette.emeraldAccent,
+                palette.tertiaryAccent
+            )
+        )
+        AppThemeStyle.SYNTHWAVE_84 -> Brush.sweepGradient(
+            listOf(
+                palette.secondaryGlowAccent,
+                palette.primaryAccent,
+                palette.amberAccent,
+                palette.secondaryGlowAccent
+            )
+        )
+        AppThemeStyle.NORD -> Brush.verticalGradient(
+            listOf(
+                palette.primaryAccent.copy(alpha = 0.85f),
+                activeGlowColor.copy(alpha = 0.70f),
+                palette.tertiaryAccent.copy(alpha = 0.60f)
+            )
+        )
+        AppThemeStyle.DRACULA_PRO -> Brush.sweepGradient(
+            listOf(
+                palette.primaryAccent,
+                palette.tertiaryAccent,
+                palette.emeraldAccent,
+                palette.secondaryGlowAccent,
+                palette.primaryAccent
+            )
         )
     }
+
+    val subtleOrbitColor = if (isDark) Color.White else palette.textPrimary
 
     Box(
         contentAlignment = Alignment.Center,
@@ -313,7 +385,7 @@ fun HeroPulseButton(
 
             val ring2Radius = size.width * 0.352f
             drawArc(
-                color = Color.White.copy(alpha = if (isActive) 0.35f else 0.10f),
+                color = subtleOrbitColor.copy(alpha = if (isActive) 0.35f else 0.12f),
                 startAngle = -orbitAngle * 1.3f,
                 sweepAngle = 42f,
                 useCenter = false,
@@ -345,10 +417,10 @@ fun HeroPulseButton(
                 .size(164.dp)
                 .scale(pressScale * coreBreath)
                 .shadow(
-                    elevation = if (isActive) 24.dp else 12.dp,
+                    elevation = if (isActive) 22.dp else 10.dp,
                     shape = CircleShape,
-                    ambientColor = activeGlowColor.copy(alpha = 0.5f),
-                    spotColor = activeGlowColor.copy(alpha = 0.6f)
+                    ambientColor = activeGlowColor.copy(alpha = if (isDark) 0.5f else 0.25f),
+                    spotColor = activeGlowColor.copy(alpha = if (isDark) 0.6f else 0.30f)
                 )
                 .clip(CircleShape)
                 .background(brush = coreFillBrush)

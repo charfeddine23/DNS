@@ -8,4 +8,7 @@
     <string name="simple_mode_desc">إيقاف التأثيرات والألوان المتحركة والمكدّس لتبسيط الواجهة</string>
     <string name="full_screen_mode_title">الشاشة الكاملة (Full Screen)</string>
     <string name="full_screen_mode_desc">توسيع الخلفية فقط لملء الشاشة مع ثبات العناوين والحاويات في مكانها</string>
+    <string name="appearance_mode_dark">الوضع الليلي</string>
+    <string name="appearance_mode_light">الوضع النهاري</string>
+    <string name="appearance_mode_system">حسب النظام</string>
 </resources>

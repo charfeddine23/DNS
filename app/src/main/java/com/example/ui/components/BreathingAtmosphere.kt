@@ -21,16 +21,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.ui.theme.AppThemeStyle
-import com.example.ui.theme.ChromaticCyan
-import com.example.ui.theme.ChromaticMagenta
-import com.example.ui.theme.CrimsonPulse
-import com.example.ui.theme.DeepVoidBlack
-import com.example.ui.theme.ElectricCyan
-import com.example.ui.theme.EmeraldMint
-import com.example.ui.theme.HoloMagenta
-import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalAppThemeStyle
-import com.example.ui.theme.NeuBaseDark
+import com.example.ui.theme.LocalPulsePalette
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -44,9 +36,8 @@ private data class SignalParticle(
 )
 
 /**
- * Full-bleed living atmospheric backdrop that adapts optically to the active [AppThemeStyle]:
- * frosted/blurred bokeh orbs for Frosted & Chromatic Liquid Glass, spectral waves for Holographic,
- * high-contrast studio depth for PSD Mockup, and sculpted slate serenity for Neumorphism.
+ * Full-bleed living atmospheric backdrop that adapts optically to the active [AppThemeStyle]
+ * and Dark / Light appearance mode at locked 90+ fps.
  */
 @Composable
 fun BreathingAtmosphere(
@@ -57,50 +48,83 @@ fun BreathingAtmosphere(
     modifier: Modifier = Modifier
 ) {
     val themeStyle = LocalAppThemeStyle.current
+    val palette = LocalPulsePalette.current
+    val isDark = palette.isDark
 
     val primaryTarget = when (themeStyle) {
         AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> when {
-            !isProtected -> HoloMagenta
-            isAdGuardShield -> EmeraldMint
-            else -> HoloViolet
+            !isProtected -> palette.secondaryGlowAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> palette.tertiaryAccent
         }
         AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> when {
-            !isProtected -> ChromaticMagenta
-            isAdGuardShield -> EmeraldMint
-            else -> ChromaticCyan
+            !isProtected -> palette.secondaryGlowAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> palette.primaryAccent
         }
         AppThemeStyle.FROSTED_GLASSMORPHISM -> when {
-            !isProtected -> CrimsonPulse
-            isAdGuardShield -> EmeraldMint
-            else -> Color(0xFF6CD4FF)
+            !isProtected -> palette.crimsonAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> if (isDark) Color(0xFF6CD4FF) else palette.primaryAccent
         }
         AppThemeStyle.GLASS_PSD_MOCKUP -> when {
-            !isProtected -> CrimsonPulse
-            isAdGuardShield -> EmeraldMint
-            else -> Color(0xFF3A86FF)
+            !isProtected -> palette.crimsonAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> if (isDark) Color(0xFF3A86FF) else palette.primaryAccent
         }
         AppThemeStyle.NEUMORPHISM -> when {
-            !isProtected -> CrimsonPulse
-            isAdGuardShield -> EmeraldMint
-            else -> ElectricCyan
+            !isProtected -> palette.crimsonAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> palette.primaryAccent
+        }
+        AppThemeStyle.TOKYO_NIGHT -> when {
+            !isProtected -> palette.crimsonAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> palette.primaryAccent
+        }
+        AppThemeStyle.CATPPUCCIN_MOCHA -> when {
+            !isProtected -> palette.crimsonAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> palette.tertiaryAccent
+        }
+        AppThemeStyle.SYNTHWAVE_84 -> when {
+            !isProtected -> palette.crimsonAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> palette.secondaryGlowAccent
+        }
+        AppThemeStyle.NORD -> when {
+            !isProtected -> palette.crimsonAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> palette.primaryAccent
+        }
+        AppThemeStyle.DRACULA_PRO -> when {
+            !isProtected -> palette.crimsonAccent
+            isAdGuardShield -> palette.emeraldAccent
+            else -> palette.primaryAccent
         }
     }
 
     val secondaryTarget = when (themeStyle) {
-        AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> if (isProtected) ElectricCyan else HoloViolet
-        AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> if (isProtected) ChromaticMagenta else ChromaticCyan
-        AppThemeStyle.FROSTED_GLASSMORPHISM -> Color(0xFF9BE7FF)
-        AppThemeStyle.GLASS_PSD_MOCKUP -> Color(0xFF00E5FF)
-        AppThemeStyle.NEUMORPHISM -> Color(0xFF2B3242)
+        AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> if (isProtected) palette.primaryAccent else palette.tertiaryAccent
+        AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> if (isProtected) palette.secondaryGlowAccent else palette.primaryAccent
+        AppThemeStyle.FROSTED_GLASSMORPHISM -> if (isDark) Color(0xFF9BE7FF) else palette.tertiaryAccent
+        AppThemeStyle.GLASS_PSD_MOCKUP -> palette.primaryAccent
+        AppThemeStyle.NEUMORPHISM -> if (isDark) Color(0xFF2B3242) else palette.neuShadowEdge
+        AppThemeStyle.TOKYO_NIGHT -> palette.tertiaryAccent
+        AppThemeStyle.CATPPUCCIN_MOCHA -> palette.amberAccent
+        AppThemeStyle.SYNTHWAVE_84 -> palette.primaryAccent
+        AppThemeStyle.NORD -> palette.tertiaryAccent
+        AppThemeStyle.DRACULA_PRO -> palette.secondaryGlowAccent
+    }
+
+    val baseBgTarget = when (themeStyle) {
+        AppThemeStyle.FROSTED_GLASSMORPHISM -> if (isDark) Color(0xFF080D15) else palette.background
+        AppThemeStyle.GLASS_PSD_MOCKUP -> if (isDark) Color(0xFF070A14) else palette.background
+        else -> palette.background
     }
 
     val baseBgColor by animateColorAsState(
-        targetValue = when (themeStyle) {
-            AppThemeStyle.NEUMORPHISM -> NeuBaseDark
-            AppThemeStyle.FROSTED_GLASSMORPHISM -> Color(0xFF080D15)
-            AppThemeStyle.GLASS_PSD_MOCKUP -> Color(0xFF070A14)
-            else -> DeepVoidBlack
-        },
+        targetValue = baseBgTarget,
         animationSpec = tween(durationMillis = 700),
         label = "bg_base"
     )
@@ -165,14 +189,15 @@ fun BreathingAtmosphere(
     }
 
     val useBlurredBackdrop = themeStyle == AppThemeStyle.CHROMATIC_FROSTED_LIQUID ||
-        themeStyle == AppThemeStyle.FROSTED_GLASSMORPHISM
+        themeStyle == AppThemeStyle.FROSTED_GLASSMORPHISM ||
+        themeStyle == AppThemeStyle.CATPPUCCIN_MOCHA
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(baseBgColor)
     ) {
-        // Layer 1: Optical Aurora & Soft Multi-Stop Bokeh Backdrop (zero offscreen blur pass for locked 90+ fps)
+        // Layer 1: Optical Aurora & Soft Multi-Stop Bokeh Backdrop
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
@@ -180,12 +205,19 @@ fun BreathingAtmosphere(
             val parallaxShiftX = (pageOffsetFraction - 1f) * w * 0.12f
 
             if (ambientGlowEnabled) {
-                val intensityBoost = when (themeStyle) {
+                val baseBoost = when (themeStyle) {
                     AppThemeStyle.NEUMORPHISM -> 0.28f
+                    AppThemeStyle.NORD -> 0.65f
+                    AppThemeStyle.CATPPUCCIN_MOCHA -> 0.85f
                     AppThemeStyle.GLASS_PSD_MOCKUP -> 1.15f
                     AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> 1.22f
+                    AppThemeStyle.SYNTHWAVE_84 -> 1.25f
+                    AppThemeStyle.DRACULA_PRO -> 1.12f
+                    AppThemeStyle.TOKYO_NIGHT -> 1.08f
                     else -> 1.0f
                 }
+                val modeAttenuation = if (isDark) 1.0f else 0.72f
+                val intensityBoost = baseBoost * modeAttenuation
                 val frostedSpread = if (useBlurredBackdrop) 1.18f else 1.0f
 
                 val orb1Center = Offset(
@@ -250,10 +282,15 @@ fun BreathingAtmosphere(
             val h = size.height
             val parallaxShiftX = (pageOffsetFraction - 1f) * w * 0.12f
 
-            if (themeStyle != AppThemeStyle.NEUMORPHISM) {
+            val showGrid = themeStyle != AppThemeStyle.NEUMORPHISM && themeStyle != AppThemeStyle.NORD
+            if (showGrid) {
                 val gridStep = 44.dp.toPx()
-                val gridAlpha = if (isProtected) 0.036f else 0.020f
-                val gridColor = primaryColor.copy(alpha = gridAlpha)
+                val baseGridAlpha = when (themeStyle) {
+                    AppThemeStyle.SYNTHWAVE_84 -> if (isProtected) 0.065f else 0.040f
+                    AppThemeStyle.TOKYO_NIGHT -> if (isProtected) 0.048f else 0.028f
+                    else -> if (isProtected) 0.036f else 0.020f
+                }
+                val gridColor = primaryColor.copy(alpha = if (isDark) baseGridAlpha else baseGridAlpha * 1.15f)
                 var gx = 0f
                 while (gx < w) {
                     drawLine(

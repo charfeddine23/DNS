@@ -78,12 +78,14 @@ import com.example.data.model.DnsServerProfile
 import com.example.data.model.LatencyStatus
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CrimsonPulse
-import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
+import com.example.ui.theme.OnAccentInk
 import com.example.ui.theme.StackCardBackSurface
 import com.example.ui.theme.StackCardFrontSurface
+import com.example.ui.theme.SubtleSurfaceBorder
+import com.example.ui.theme.SubtleSurfaceFill
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.Job
@@ -679,8 +681,8 @@ private fun StackedDnsCardItem(
                                             )
                                         } else {
                                             listOf(
-                                                Color.White.copy(alpha = 0.12f),
-                                                Color.White.copy(alpha = 0.04f)
+                                                SubtleSurfaceFill,
+                                                SubtleSurfaceFill.copy(alpha = 0.04f)
                                             )
                                         }
                                     ),
@@ -689,7 +691,7 @@ private fun StackedDnsCardItem(
                                 .border(
                                     width = 1.dp,
                                     color = if (isTopCard) EmeraldMint.copy(alpha = 0.6f)
-                                    else Color.White.copy(alpha = 0.12f),
+                                    else SubtleSurfaceBorder,
                                     shape = CircleShape
                                 ),
                             contentAlignment = Alignment.Center
@@ -793,7 +795,7 @@ private fun StackedDnsCardItem(
                         ) {
                             Text(
                                 text = if (isEngineActive && isSettled) "ACTIVE SHIELD" else "SELECTED",
-                                color = DeepVoidBlack,
+                                color = OnAccentInk,
                                 fontSize = 9.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 letterSpacing = 0.6.sp
