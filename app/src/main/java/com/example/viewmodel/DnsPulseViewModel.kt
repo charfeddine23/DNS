@@ -2,6 +2,7 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.net.VpnService
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
@@ -10,6 +11,7 @@ import com.example.data.model.DnsServerProfile
 import com.example.data.model.PrivateDnsPreset
 import com.example.data.preferences.PreferencesManager
 import com.example.data.repository.DnsPresetData
+import com.example.domain.usecase.BenchmarkDnsServersUseCase
 import com.example.service.DnsVpnService
 import com.example.service.ShizukuDnsBridgeService
 import com.example.service.ShizukuStatus
@@ -54,6 +56,7 @@ data class HomeUiState(
 class DnsPulseViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = PreferencesManager(application)
+    private val benchmarkDnsServers = BenchmarkDnsServersUseCase()
     val shizukuBridge: ShizukuDnsBridgeService = ShizukuDnsBridgeService.getInstance(application)
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -186,6 +189,61 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
+     * Selects and activates the server that settled at Index 0 of InteractiveStackedDnsServers.
+     */
+    fun activateServerFromDeck(
+        server: DnsServerProfile,
+        context: Context,
+        onVpnPermissionRequired: (android.content.Intent) -> Unit,
+        onPrivateDnsFallback: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            prefs.setLastVpnServerId(server.id)
+            _uiState.value = _uiState.value.copy(selectedVpnServerId = server.id)
+            measureActivePing(server.primaryIpv4)
+
+            if (_uiState.value.engineMode == DnsEngineMode.LOCAL_VPN) {
+                val prepareIntent = try {
+                    VpnService.prepare(context)
+                } catch (_: Exception) {
+                    null
+                }
+                if (prepareIntent != null) {
+                    onVpnPermissionRequired(prepareIntent)
+                } else {
+                    DnsVpnService.startVpn(
+                        context = context,
+                        serverName = server.name,
+                        primaryIpv4 = server.primaryIpv4,
+                        secondaryIpv4 = server.secondaryIpv4,
+                        primaryIpv6 = server.primaryIpv6,
+                        secondaryIpv6 = server.secondaryIpv6
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        userMessage = "Activated ${server.name} via Local VPN"
+                    )
+                }
+            } else if (server.dotHostname.isNotBlank()) {
+                val matchingPreset = _uiState.value.privatePresets.firstOrNull {
+                    it.hostname.equals(server.dotHostname, ignoreCase = true)
+                } ?: PrivateDnsPreset(
+                    id = server.id,
+                    name = server.name,
+                    tag = "Stack Selection",
+                    hostname = server.dotHostname,
+                    description = server.description,
+                    isAdGuardShield = server.dotHostname.equals("dns.adguard.com", ignoreCase = true)
+                )
+                activatePrivateDnsPreset(matchingPreset, onPrivateDnsFallback)
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    userMessage = "Selected ${server.name} (${server.primaryIpv4}) for Local VPN"
+                )
+            }
+        }
+    }
+
+    /**
      * Activates a DoT preset using direct WRITE_SECURE_SETTINGS or Shizuku bridge,
      * falling back to clipboard + settings if neither elevated permission is active.
      */
@@ -312,20 +370,12 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     fun pingAllServers() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isPinging = true)
-            val updatedServers = _uiState.value.vpnServers.map { server ->
-                async {
-                    val ping = LatencyTester.pingDnsServer(server.primaryIpv4)
-                    server.copy(latencyMs = if (ping > 0) ping else null)
-                }
-            }.awaitAll()
-
-            val fastest = updatedServers.filter { it.latencyMs != null && it.latencyMs > 0 }
-                .minByOrNull { it.latencyMs ?: Long.MAX_VALUE }
+            val result = benchmarkDnsServers(_uiState.value.vpnServers)
 
             _uiState.value = _uiState.value.copy(
-                vpnServers = updatedServers,
+                vpnServers = result.updatedServers,
                 isPinging = false,
-                livePingMs = fastest?.latencyMs ?: _uiState.value.livePingMs
+                livePingMs = result.fastestLatencyMs ?: _uiState.value.livePingMs
             )
         }
     }

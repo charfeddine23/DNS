@@ -76,6 +76,7 @@ import com.example.ui.components.DnsServerCard
 import com.example.ui.components.ExpertModeBottomSheet
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HeroPulseButton
+import com.example.ui.components.InteractiveStackedDnsServers
 import com.example.ui.components.PrivateDnsShieldCard
 import com.example.ui.theme.CrimsonPulse
 import com.example.ui.theme.ElectricCyan
@@ -371,6 +372,25 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+
+        // Interactive Stacked DNS Servers Carousel (Vertical Drag & Release to Select & Activate)
+        item {
+            InteractiveStackedDnsServers(
+                servers = uiState.vpnServers,
+                selectedServerId = uiState.selectedVpnServerId,
+                isEngineActive = isAnyActive,
+                onServerSettledOnTop = { settledServer ->
+                    viewModel.activateServerFromDeck(
+                        server = settledServer,
+                        context = context,
+                        onVpnPermissionRequired = { prepareIntent ->
+                            vpnLauncher.launch(prepareIntent)
+                        },
+                        onPrivateDnsFallback = onFallbackRequired
+                    )
+                }
+            )
         }
 
         // Smooth Horizontal Slide Between Private DNS Controls & Local VPN Servers
