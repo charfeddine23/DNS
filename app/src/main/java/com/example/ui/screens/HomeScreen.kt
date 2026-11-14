@@ -46,12 +46,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -390,6 +386,9 @@ fun HomeScreen(
                     servers = uiState.vpnServers,
                     selectedServerId = uiState.selectedVpnServerId,
                     isEngineActive = isAnyActive,
+                    isPinging = uiState.isPinging,
+                    onPingAll = { viewModel.pingAllServers() },
+                    onAutoSelectFastest = { viewModel.autoSelectFastestServer() },
                     onServerSettledOnTop = { settledServer ->
                         viewModel.activateServerFromDeck(
                             server = settledServer,
@@ -404,113 +403,62 @@ fun HomeScreen(
             }
         }
 
-        // Smooth Horizontal Slide Between Private DNS Controls & Local VPN Servers
-        item {
-            AnimatedContent(
-                targetState = uiState.engineMode,
-                transitionSpec = {
-                    if (simpleMode) {
-                        EnterTransition.None togetherWith ExitTransition.None
-                    } else {
-                        val forward = targetState == DnsEngineMode.LOCAL_VPN
-                        (slideInHorizontally(
-                            animationSpec = spring(
-                                dampingRatio = 0.86f,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
-                        ) { width -> if (forward) width else -width } + fadeIn(tween(260)))
-                            .togetherWith(
-                                slideOutHorizontally(
-                                    animationSpec = spring(
-                                        dampingRatio = 0.86f,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                ) { width -> if (forward) -width else width } + fadeOut(tween(200))
-                            )
-                    }
-                },
-                label = "engine_panel_slide"
-            ) { mode ->
-                if (mode == DnsEngineMode.PRIVATE_DNS) {
-                    PrivateDnsShieldCard(
-                        privateDnsState = uiState.privateDnsState,
-                        presets = uiState.privatePresets,
-                        selectedHostname = uiState.selectedDotPreset,
-                        onActivatePreset = { preset ->
-                            viewModel.activatePrivateDnsPreset(preset) { host ->
-                                onFallbackRequired(host)
-                            }
-                        },
-                        onDisablePrivateDns = {
-                            viewModel.disablePrivateDns {
-                                onLaunchWirelessSettings()
-                            }
-                        },
-                        onOpenExpertGuide = { showExpertSheet = true },
-                        onLaunchWirelessSettings = onLaunchWirelessSettings
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = "LOCAL VPN DNS SERVERS",
-                                    color = TextSecondary,
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 1.sp
+        // Smooth Horizontal Slide Between Private DNS Controls & (Simple Mode fallback only)
+        if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS || simpleMode) {
+            item {
+                AnimatedContent(
+                    targetState = uiState.engineMode,
+                    transitionSpec = {
+                        if (simpleMode) {
+                            EnterTransition.None togetherWith ExitTransition.None
+                        } else {
+                            val forward = targetState == DnsEngineMode.LOCAL_VPN
+                            (slideInHorizontally(
+                                animationSpec = spring(
+                                    dampingRatio = 0.86f,
+                                    stiffness = Spring.StiffnessMediumLow
                                 )
-                                Text(
-                                    text = "Zero-Root DNS Tunneling",
-                                    color = TextPrimary,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
+                            ) { width -> if (forward) width else -width } + fadeIn(tween(260)))
+                                .togetherWith(
+                                    slideOutHorizontally(
+                                        animationSpec = spring(
+                                            dampingRatio = 0.86f,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        )
+                                    ) { width -> if (forward) -width else width } + fadeOut(tween(200))
                                 )
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = { viewModel.pingAllServers() },
-                                    modifier = Modifier.testTag("ping_all_servers_btn")
-                                ) {
-                                    if (uiState.isPinging) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            strokeWidth = 2.dp,
-                                            color = ElectricCyan
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Ping All",
-                                            tint = ElectricCyan
-                                        )
-                                    }
-                                }
-
-                                IconButton(
-                                    onClick = { viewModel.autoSelectFastestServer() },
-                                    modifier = Modifier.testTag("auto_select_fastest_btn")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Speed,
-                                        contentDescription = "Auto Select Fastest",
-                                        tint = EmeraldMint
-                                    )
-                                }
-                            }
                         }
-
-                        uiState.vpnServers.forEach { server ->
-                            DnsServerCard(
-                                profile = server,
-                                isSelected = uiState.selectedVpnServerId == server.id,
-                                onSelect = { viewModel.selectVpnServer(server.id) }
-                            )
+                    },
+                    label = "engine_panel_slide"
+                ) { mode ->
+                    if (mode == DnsEngineMode.PRIVATE_DNS) {
+                        PrivateDnsShieldCard(
+                            privateDnsState = uiState.privateDnsState,
+                            presets = uiState.privatePresets,
+                            selectedHostname = uiState.selectedDotPreset,
+                            onActivatePreset = { preset ->
+                                viewModel.activatePrivateDnsPreset(preset) { host ->
+                                    onFallbackRequired(host)
+                                }
+                            },
+                            onDisablePrivateDns = {
+                                viewModel.disablePrivateDns {
+                                    onLaunchWirelessSettings()
+                                }
+                            },
+                            onOpenExpertGuide = { showExpertSheet = true },
+                            onLaunchWirelessSettings = onLaunchWirelessSettings
+                        )
+                    } else if (simpleMode) {
+                        // Simple Mode has no stack, so provide flat server selection cards cleanly
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            uiState.vpnServers.forEach { server ->
+                                DnsServerCard(
+                                    profile = server,
+                                    isSelected = uiState.selectedVpnServerId == server.id,
+                                    onSelect = { viewModel.selectVpnServer(server.id) }
+                                )
+                            }
                         }
                     }
                 }

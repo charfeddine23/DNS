@@ -2,13 +2,17 @@ package com.example.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.calculateTargetValue
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +20,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,35 +32,41 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -75,19 +84,27 @@ import com.example.ui.theme.GlassSurfaceVariant
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
- * Interactive 3D Stacked DNS Server Deck with depth, scale, and alpha opacity gradients.
- * Supports vertical drag-and-release with spring physics: the card settling at Index 0
- * is automatically selected, highlighted in Emerald Mint (#00E676), and activated.
+ * Interactive 3D Infinite Stacked DNS Server Deck with realistic continuous drag physics,
+ * momentum/inertia decay, perspective tilt, and haptic detents.
+ *
+ * Dragging continuously cycles cards indefinitely in real time; releasing settles on the
+ * nearest projected card and activates whichever card lands at Index 0.
  */
 @Composable
 fun InteractiveStackedDnsServers(
     servers: List<DnsServerProfile>,
     selectedServerId: String,
     isEngineActive: Boolean,
+    isPinging: Boolean = false,
+    onPingAll: () -> Unit = {},
+    onAutoSelectFastest: () -> Unit = {},
     onServerSettledOnTop: (DnsServerProfile) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -96,61 +113,108 @@ fun InteractiveStackedDnsServers(
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val dragThresholdPx = with(density) { 46.dp.toPx() }
-    val dragOffsetY = remember { Animatable(0f) }
+    val cardStridePx = with(density) { 86.dp.toPx() }
+    val cardStepOffsetPx = with(density) { 15.dp.toPx() }
+    val peelDropPx = with(density) { 96.dp.toPx() }
 
-    // Maintain a deck order where Index 0 corresponds to the top active card
     val orderedIds = remember { mutableStateListOf<String>() }
+    val deckPosition = remember { Animatable(0f) }
+    var isUserInteracting by remember { mutableStateOf(false) }
+    var lastDetentSlot by remember { mutableIntStateOf(0) }
 
-    // Sync deck order when servers list or external selection changes
-    LaunchedEffect(servers.map { it.id }, selectedServerId) {
+    val currentServers by rememberUpdatedState(servers)
+    val currentOnSettled by rememberUpdatedState(onServerSettledOnTop)
+
+    // Sync orderedIds only when the set of server IDs changes
+    LaunchedEffect(servers.map { it.id }) {
         val validIds = servers.map { it.id }
         if (orderedIds.isEmpty() || orderedIds.toSet() != validIds.toSet()) {
             orderedIds.clear()
             val selectedFirst = validIds.filter { it == selectedServerId }
             val rest = validIds.filterNot { it == selectedServerId }
             orderedIds.addAll(selectedFirst + rest)
-        } else if (orderedIds.firstOrNull() != selectedServerId && validIds.contains(selectedServerId)) {
-            val idx = orderedIds.indexOf(selectedServerId)
-            if (idx > 0) {
-                val rotated = orderedIds.subList(idx, orderedIds.size).toList() +
-                    orderedIds.subList(0, idx).toList()
-                orderedIds.clear()
-                orderedIds.addAll(rotated)
-            }
+            deckPosition.snapTo(0f)
+            lastDetentSlot = 0
         }
     }
 
     val serverMap = remember(servers) { servers.associateBy { it.id } }
     val deck = orderedIds.mapNotNull { serverMap[it] }.ifEmpty { servers }
-    val visibleCount = minOf(4, deck.size)
+    val deckCount = deck.size
 
-    fun rotateNext() {
-        if (orderedIds.size <= 1) return
-        val first = orderedIds.removeAt(0)
-        orderedIds.add(first)
-        val topServer = orderedIds.firstOrNull()?.let { serverMap[it] } ?: return
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        onServerSettledOnTop(topServer)
+    // Smoothly align deck if selectedServerId changed externally (e.g., Auto-Select Fastest or Benchmark screen)
+    LaunchedEffect(selectedServerId, deckCount) {
+        if (deckCount <= 1 || isUserInteracting) return@LaunchedEffect
+        val targetIdx = deck.indexOfFirst { it.id == selectedServerId }
+        if (targetIdx < 0) return@LaunchedEffect
+        val currentSlot = deckPosition.value.roundToInt()
+        val currentMod = ((currentSlot % deckCount) + deckCount) % deckCount
+        if (currentMod != targetIdx) {
+            var diff = targetIdx - currentMod
+            if (diff > deckCount / 2) diff -= deckCount
+            if (diff < -deckCount / 2) diff += deckCount
+            val targetPos = (currentSlot + diff).toFloat()
+            lastDetentSlot = targetPos.roundToInt()
+            deckPosition.animateTo(
+                targetValue = targetPos,
+                animationSpec = spring(
+                    dampingRatio = 0.80f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
     }
 
-    fun rotatePrevious() {
-        if (orderedIds.size <= 1) return
-        val last = orderedIds.removeAt(orderedIds.lastIndex)
-        orderedIds.add(0, last)
-        val topServer = orderedIds.firstOrNull()?.let { serverMap[it] } ?: return
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        onServerSettledOnTop(topServer)
+    fun settleAndActivateAt(targetSlot: Float, initialVelocityCardsPerSec: Float = 0f) {
+        scope.launch {
+            isUserInteracting = true
+            try {
+                deckPosition.animateTo(
+                    targetValue = targetSlot,
+                    initialVelocity = initialVelocityCardsPerSec,
+                    animationSpec = spring(
+                        dampingRatio = 0.78f,
+                        stiffness = Spring.StiffnessLow
+                    )
+                ) {
+                    val detent = value.roundToInt()
+                    if (detent != lastDetentSlot) {
+                        lastDetentSlot = detent
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                }
+            } finally {
+                isUserInteracting = false
+            }
+
+            if (deck.isNotEmpty()) {
+                val finalSlot = deckPosition.value.roundToInt()
+                val modIdx = ((finalSlot % deck.size) + deck.size) % deck.size
+                val settledServer = deck[modIdx]
+                lastDetentSlot = finalSlot
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                currentOnSettled(settledServer)
+            }
+        }
     }
 
-    val dragProgress = (abs(dragOffsetY.value) / dragThresholdPx).coerceIn(0f, 1f)
+    fun stepBy(delta: Int) {
+        if (deckCount <= 1) return
+        val baseSlot = deckPosition.targetValue.roundToInt()
+        settleAndActivateAt((baseSlot + delta).toFloat())
+    }
+
+    val currentPos = deckPosition.value
+    val activeSlotFloat = currentPos.roundToInt()
+    val activeModIndex = if (deckCount > 0) ((activeSlotFloat % deckCount) + deckCount) % deckCount else 0
+    val maxVisibleDepth = minOf(3, (deckCount - 1).coerceAtLeast(0))
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .testTag("interactive_stacked_dns_servers")
     ) {
-        // Section header with quick step controls for one-handed or accessibility use
+        // Header with quick Benchmark / Fastest / Step controls
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -158,7 +222,10 @@ fun InteractiveStackedDnsServers(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
                 Icon(
                     imageVector = Icons.Default.SwapVert,
                     contentDescription = null,
@@ -175,19 +242,57 @@ fun InteractiveStackedDnsServers(
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "Drag stack vertically & release to activate",
+                        text = "Hold & drag continuously • Release to activate",
                         color = TextPrimary.copy(alpha = 0.85f),
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
-                    onClick = { rotatePrevious() },
+                    onClick = onPingAll,
                     modifier = Modifier
                         .size(36.dp)
+                        .testTag("ping_all_servers_btn")
+                ) {
+                    if (isPinging) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = ElectricCyan
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Ping All",
+                            tint = ElectricCyan,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onAutoSelectFastest,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("auto_select_fastest_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = "Auto Select Fastest",
+                        tint = EmeraldMint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = { stepBy(-1) },
+                    modifier = Modifier
+                        .size(34.dp)
                         .testTag("stack_prev_btn")
                 ) {
                     Icon(
@@ -196,10 +301,11 @@ fun InteractiveStackedDnsServers(
                         tint = TextSecondary
                     )
                 }
+
                 IconButton(
-                    onClick = { rotateNext() },
+                    onClick = { stepBy(1) },
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(34.dp)
                         .testTag("stack_next_btn")
                 ) {
                     Icon(
@@ -213,138 +319,133 @@ fun InteractiveStackedDnsServers(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Stacked 3D Card Deck Container
+        // Continuous Infinite 3D Card Deck
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(178.dp)
-                .pointerInput(deck.size) {
-                    detectVerticalDragGestures(
-                        onVerticalDrag = { change, dragAmount ->
+                .height(186.dp)
+                .pointerInput(deckCount, cardStridePx) {
+                    if (deckCount <= 1) return@pointerInput
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val velocityTracker = VelocityTracker()
+                        var wasRunning = deckPosition.isRunning
+                        var liveDeckPos = deckPosition.value
+
+                        val dragStart = awaitVerticalTouchSlopOrCancellation(down.id) { change, overSlop ->
                             change.consume()
+                            isUserInteracting = true
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            liveDeckPos += (overSlop / cardStridePx)
+                            val targetSnap = liveDeckPos
                             scope.launch {
-                                val next = (dragOffsetY.value + dragAmount).coerceIn(
-                                    -dragThresholdPx * 2.1f,
-                                    dragThresholdPx * 2.1f
-                                )
-                                dragOffsetY.snapTo(next)
+                                if (wasRunning) {
+                                    wasRunning = false
+                                    deckPosition.stop()
+                                }
+                                deckPosition.snapTo(targetSnap)
                             }
-                        },
-                        onDragEnd = {
-                            val currentOffset = dragOffsetY.value
-                            if (currentOffset <= -dragThresholdPx) {
-                                rotateNext()
-                            } else if (currentOffset >= dragThresholdPx) {
-                                rotatePrevious()
-                            }
-                            scope.launch {
-                                dragOffsetY.animateTo(
-                                    targetValue = 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = 0.68f,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                )
-                            }
-                        },
-                        onDragCancel = {
-                            scope.launch {
-                                dragOffsetY.animateTo(
-                                    targetValue = 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                )
+                            val detent = targetSnap.roundToInt()
+                            if (detent != lastDetentSlot) {
+                                lastDetentSlot = detent
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
                         }
-                    )
+
+                        if (dragStart != null) {
+                            isUserInteracting = true
+                            if (deckPosition.isRunning) {
+                                scope.launch { deckPosition.stop() }
+                            }
+                            val completed = verticalDrag(dragStart.id) { change ->
+                                val dy = change.positionChange().y
+                                change.consume()
+                                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                if (dy != 0f) {
+                                    liveDeckPos += (dy / cardStridePx)
+                                    val targetSnap = liveDeckPos
+                                    scope.launch { deckPosition.snapTo(targetSnap) }
+                                    val detent = targetSnap.roundToInt()
+                                    if (detent != lastDetentSlot) {
+                                        lastDetentSlot = detent
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
+                                }
+                            }
+
+                            val velocityPxPerSec = velocityTracker.calculateVelocity().y
+                            val velocityCardsPerSec = (velocityPxPerSec / cardStridePx).coerceIn(-14f, 14f)
+
+                            if (completed) {
+                                val decay = exponentialDecay<Float>(frictionMultiplier = 2.6f)
+                                val projectedEnd = decay.calculateTargetValue(
+                                    typeConverter = Float.VectorConverter,
+                                    initialValue = liveDeckPos,
+                                    initialVelocity = velocityCardsPerSec
+                                )
+                                val snappedTarget = projectedEnd.roundToInt().toFloat()
+                                settleAndActivateAt(snappedTarget, velocityCardsPerSec)
+                            } else {
+                                settleAndActivateAt(liveDeckPos.roundToInt().toFloat(), 0f)
+                            }
+                        }
+                    }
                 },
             contentAlignment = Alignment.TopCenter
         ) {
-            // Render back-to-front so Index 0 stays strictly on top
-            for (index in (visibleCount - 1) downTo 0) {
-                val server = deck[index]
-                val isTopCard = index == 0
+            // Render cards continuously based on circular phase in [0, N)
+            val renderItems = remember(deck, currentPos) {
+                deck.mapIndexedNotNull { index, server ->
+                    val phase = (((index - currentPos) % deckCount) + deckCount) % deckCount
+                    // Keep cards that are visible in front stack OR peeling/wrapping around [N-1, N)
+                    val isPeelingZone = phase >= (deckCount - 1).toFloat()
+                    val isVisibleStack = phase <= 3.6f
+                    if (!isPeelingZone && !isVisibleStack) {
+                        null
+                    } else {
+                        val visualProps = computeRealisticDeckPose(
+                            phase = phase,
+                            deckCount = deckCount,
+                            maxVisibleDepth = maxVisibleDepth,
+                            stepOffsetPx = cardStepOffsetPx,
+                            peelDropPx = peelDropPx
+                        )
+                        Triple(server, index, visualProps)
+                    }
+                }.sortedBy { it.third.zOrder }
+            }
 
-                val targetDepthOffsetDp = if (isTopCard) {
-                    0.dp
-                } else {
-                    val baseOffset = (index * 16).dp
-                    val promotedOffset = ((index - 1) * 16).dp
-                    lerp(baseOffset.value, promotedOffset.value, dragProgress).dp
-                }
-
-                val targetScale = if (isTopCard) {
-                    1f - 0.045f * dragProgress
-                } else {
-                    val baseScale = 1f - (index * 0.055f)
-                    val promotedScale = 1f - ((index - 1) * 0.055f)
-                    lerp(baseScale, promotedScale, dragProgress)
-                }
-
-                val targetAlpha = if (isTopCard) {
-                    1f - 0.16f * dragProgress
-                } else {
-                    val baseAlpha = (1f - (index * 0.20f)).coerceAtLeast(0.32f)
-                    val promotedAlpha = (1f - ((index - 1) * 0.20f)).coerceAtLeast(0.32f)
-                    lerp(baseAlpha, promotedAlpha, dragProgress)
-                }
-
-                val animatedOffsetY by animateDpAsState(
-                    targetValue = targetDepthOffsetDp,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    ),
-                    label = "stack_depth_offset_$index"
-                )
-                val animatedScale by animateFloatAsState(
-                    targetValue = targetScale,
-                    animationSpec = spring(
-                        dampingRatio = 0.78f,
-                        stiffness = Spring.StiffnessMediumLow
-                    ),
-                    label = "stack_scale_$index"
-                )
-                val animatedAlpha by animateFloatAsState(
-                    targetValue = targetAlpha,
-                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                    label = "stack_alpha_$index"
-                )
-
-                val cardYShiftPx = if (isTopCard) dragOffsetY.value.roundToInt() else 0
+            renderItems.forEach { (server, index, pose) ->
+                val isTopFocused = index == activeModIndex &&
+                    abs(pose.translationY) < cardStepOffsetPx * 0.65f
 
                 StackedDnsCardItem(
                     server = server,
-                    isTopCard = isTopCard,
+                    isTopCard = isTopFocused,
+                    isSettled = !isUserInteracting && isTopFocused,
                     isEngineActive = isEngineActive,
                     onClick = {
-                        if (!isTopCard) {
-                            val idx = orderedIds.indexOf(server.id)
-                            if (idx > 0) {
-                                val rotated = orderedIds.subList(idx, orderedIds.size).toList() +
-                                    orderedIds.subList(0, idx).toList()
-                                orderedIds.clear()
-                                orderedIds.addAll(rotated)
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onServerSettledOnTop(server)
-                            }
+                        if (!isTopFocused) {
+                            val currentSlot = deckPosition.value.roundToInt()
+                            val currentMod = ((currentSlot % deckCount) + deckCount) % deckCount
+                            var diff = index - currentMod
+                            if (diff > deckCount / 2) diff -= deckCount
+                            if (diff < -deckCount / 2) diff += deckCount
+                            settleAndActivateAt((currentSlot + diff).toFloat())
                         } else {
-                            onServerSettledOnTop(server)
+                            currentOnSettled(server)
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .zIndex((visibleCount - index).toFloat())
-                        .offset(y = animatedOffsetY)
-                        .offset { IntOffset(0, cardYShiftPx) }
-                        .scale(animatedScale)
-                        .alpha(animatedAlpha)
+                        .zIndex(pose.zOrder)
                         .graphicsLayer {
-                            if (isTopCard) {
-                                rotationX = (-dragOffsetY.value / 24f).coerceIn(-8f, 8f)
-                            }
+                            translationY = pose.translationY
+                            scaleX = pose.scale
+                            scaleY = pose.scale
+                            alpha = pose.alpha
+                            rotationX = pose.rotationX
+                            cameraDistance = 12f * density.density
                         }
                 )
             }
@@ -352,10 +453,98 @@ fun InteractiveStackedDnsServers(
     }
 }
 
+private data class DeckCardPose(
+    val translationY: Float,
+    val scale: Float,
+    val alpha: Float,
+    val rotationX: Float,
+    val zOrder: Float
+)
+
+/**
+ * Computes smooth, continuous 3D pose for each card in an infinite circular deck.
+ * - phase in [0, deckCount - 1]: resting / promoting up through the stacked layers.
+ * - phase in [deckCount - 1, deckCount): peeling smoothly down off the front of the deck,
+ *   tilting forward with perspective, then tucking cleanly behind the back layer.
+ */
+private fun computeRealisticDeckPose(
+    phase: Float,
+    deckCount: Int,
+    maxVisibleDepth: Int,
+    stepOffsetPx: Float,
+    peelDropPx: Float
+): DeckCardPose {
+    val peelStart = (deckCount - 1).toFloat()
+
+    // Case 1: Card is peeling off the front toward the back (or unwrapping in reverse)
+    if (deckCount > 1 && phase >= peelStart) {
+        // u goes 0.0 (at front top) -> 1.0 (tucked behind slot deckCount - 1)
+        val u = (deckCount.toFloat() - phase).coerceIn(0f, 1f)
+        val backDepth = minOf(deckCount - 1, 3)
+        val backY = backDepth * stepOffsetPx
+        val backScale = 1f - (backDepth * 0.055f)
+        val backAlpha = when {
+            deckCount <= 4 -> (1f - backDepth * 0.21f).coerceAtLeast(0.32f)
+            else -> 0f
+        }
+        val backTilt = -backDepth * 1.8f
+
+        return if (u <= 0.5f) {
+            // Front-half peel: slides down with finger, lifts slightly in tilt, stays in front
+            val t = u / 0.5f // 0 -> 1
+            val arc = sin((t * PI / 2.0)).toFloat()
+            DeckCardPose(
+                translationY = lerp(0f, peelDropPx, arc),
+                scale = lerp(1f, 0.92f, arc),
+                alpha = lerp(1f, 0.90f, arc),
+                rotationX = lerp(0f, -15f, arc),
+                zOrder = 200f - u * 10f
+            )
+        } else {
+            // Back-half tuck: passes behind the deck and rises cleanly into the deepest visible layer
+            val t = (u - 0.5f) / 0.5f // 0 -> 1
+            val smoothT = (1f - cos(t * PI).toFloat()) * 0.5f
+            DeckCardPose(
+                translationY = lerp(peelDropPx, backY, smoothT),
+                scale = lerp(0.92f, backScale, smoothT),
+                alpha = if (t < 0.35f) {
+                    lerp(0.90f, maxOf(backAlpha, 0.28f), t / 0.35f)
+                } else {
+                    lerp(maxOf(backAlpha, 0.28f), backAlpha, (t - 0.35f) / 0.65f)
+                },
+                rotationX = lerp(-15f, backTilt, smoothT),
+                zOrder = 10f - u
+            )
+        }
+    }
+
+    // Case 2: Card is waiting in the stack [0 .. deckCount - 1), promoting upward smoothly
+    val clampedDepth = phase.coerceIn(0f, 3.6f)
+    val y = clampedDepth * stepOffsetPx
+    val scale = (1f - clampedDepth * 0.055f).coerceAtLeast(0.78f)
+    val baseAlpha = (1f - clampedDepth * 0.21f).coerceAtLeast(0f)
+    val alpha = if (clampedDepth > maxVisibleDepth.toFloat() && deckCount > 4) {
+        val fadeT = (clampedDepth - 3f) / 0.6f
+        lerp(0.37f, 0f, fadeT.coerceIn(0f, 1f))
+    } else {
+        baseAlpha.coerceAtLeast(0.32f)
+    }
+    val tilt = -clampedDepth * 1.8f
+
+    return DeckCardPose(
+        translationY = y,
+        scale = scale,
+        alpha = alpha,
+        rotationX = tilt,
+        zOrder = 100f - clampedDepth * 10f
+    )
+}
+
 @Composable
 private fun StackedDnsCardItem(
     server: DnsServerProfile,
     isTopCard: Boolean,
+    isSettled: Boolean,
     isEngineActive: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -372,13 +561,13 @@ private fun StackedDnsCardItem(
 
     GlassCard(
         modifier = modifier
-            .height(122.dp)
+            .height(124.dp)
             .testTag(if (isTopCard) "stacked_top_card_${server.id}" else "stacked_card_${server.id}"),
         cornerRadius = 20.dp,
         borderColor = cardBorderColor,
         borderWidth = if (isTopCard) 1.7.dp else 1.dp,
         backgroundColor = cardBackground,
-        breathingGlow = isTopCard
+        breathingGlow = isSettled
     ) {
         Box(
             modifier = Modifier
@@ -524,7 +713,7 @@ private fun StackedDnsCardItem(
                                 .padding(horizontal = 9.dp, vertical = 3.dp)
                         ) {
                             Text(
-                                text = if (isEngineActive) "ACTIVE SHIELD" else "SELECTED",
+                                text = if (isEngineActive && isSettled) "ACTIVE SHIELD" else "SELECTED",
                                 color = DeepVoidBlack,
                                 fontSize = 9.5.sp,
                                 fontWeight = FontWeight.ExtraBold,
