@@ -155,10 +155,45 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun configureHighRefreshRate() {
+        try {
+            val activeDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                display
+            } else {
+                @Suppress("DEPRECATION")
+                windowManager.defaultDisplay
+            } ?: return
+
+            val currentMode = activeDisplay.mode
+            val highRefreshModes = activeDisplay.supportedModes
+                .filter { mode ->
+                    mode.physicalWidth == currentMode.physicalWidth &&
+                        mode.physicalHeight == currentMode.physicalHeight &&
+                        mode.refreshRate >= 89.5f
+                }
+
+            val targetMode = highRefreshModes.minByOrNull { kotlin.math.abs(it.refreshRate - 90f) }
+                ?: highRefreshModes.maxByOrNull { it.refreshRate }
+
+            window.attributes = window.attributes.apply {
+                if (targetMode != null) {
+                    preferredDisplayModeId = targetMode.modeId
+                    preferredRefreshRate = targetMode.refreshRate
+                } else {
+                    preferredRefreshRate = 90f
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && isFullScreenEnabled) {
-            applyFullScreenWindowState(true)
+        if (hasFocus) {
+            configureHighRefreshRate()
+            if (isFullScreenEnabled) {
+                applyFullScreenWindowState(true)
+            }
         }
     }
 
@@ -166,6 +201,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        configureHighRefreshRate()
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()
@@ -422,6 +458,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        configureHighRefreshRate()
         viewModel.refreshSystemPrivateDnsState()
     }
 }

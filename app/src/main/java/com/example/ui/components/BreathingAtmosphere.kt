@@ -16,7 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -173,12 +172,8 @@ fun BreathingAtmosphere(
             .fillMaxSize()
             .background(baseBgColor)
     ) {
-        // Layer 1: Optical Aurora & Blurred Bokeh Backdrop
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(if (useBlurredBackdrop) Modifier.blur(28.dp) else Modifier)
-        ) {
+        // Layer 1: Optical Aurora & Soft Multi-Stop Bokeh Backdrop (zero offscreen blur pass for locked 90+ fps)
+        Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
             val breathScale = 1f + 0.14f * sin(breathPhase)
@@ -191,19 +186,19 @@ fun BreathingAtmosphere(
                     AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> 1.22f
                     else -> 1.0f
                 }
+                val frostedSpread = if (useBlurredBackdrop) 1.18f else 1.0f
 
                 val orb1Center = Offset(
                     x = w * 0.5f + cos(driftPhase) * w * 0.10f - parallaxShiftX,
                     y = h * 0.26f + sin(breathPhase) * h * 0.03f
                 )
-                val orb1Radius = w * 0.85f * breathScale
+                val orb1Radius = w * 0.90f * breathScale * frostedSpread
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(
-                            primaryColor.copy(alpha = ((if (isProtected) 0.26f else 0.16f) * intensityBoost).coerceAtMost(0.45f)),
-                            primaryColor.copy(alpha = ((if (isProtected) 0.08f else 0.04f) * intensityBoost).coerceAtMost(0.25f)),
-                            Color.Transparent
-                        ),
+                        0.0f to primaryColor.copy(alpha = ((if (isProtected) 0.26f else 0.16f) * intensityBoost).coerceAtMost(0.45f)),
+                        0.45f to primaryColor.copy(alpha = ((if (isProtected) 0.11f else 0.06f) * intensityBoost).coerceAtMost(0.26f)),
+                        0.78f to primaryColor.copy(alpha = ((if (isProtected) 0.035f else 0.015f) * intensityBoost).coerceAtMost(0.10f)),
+                        1.0f to Color.Transparent,
                         center = orb1Center,
                         radius = orb1Radius
                     ),
@@ -216,13 +211,12 @@ fun BreathingAtmosphere(
                     x = w * 0.22f + sin(driftPhase * 0.8f) * w * 0.14f + parallaxShiftX * 0.7f,
                     y = h * 0.76f + cos(driftPhase) * h * 0.05f
                 )
-                val orb2Radius = w * 0.72f * orb2Scale
+                val orb2Radius = w * 0.78f * orb2Scale * frostedSpread
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(
-                            secondaryColor.copy(alpha = ((if (isProtected) 0.18f else 0.10f) * intensityBoost).coerceAtMost(0.35f)),
-                            Color.Transparent
-                        ),
+                        0.0f to secondaryColor.copy(alpha = ((if (isProtected) 0.18f else 0.10f) * intensityBoost).coerceAtMost(0.35f)),
+                        0.55f to secondaryColor.copy(alpha = ((if (isProtected) 0.06f else 0.03f) * intensityBoost).coerceAtMost(0.14f)),
+                        1.0f to Color.Transparent,
                         center = orb2Center,
                         radius = orb2Radius
                     ),
