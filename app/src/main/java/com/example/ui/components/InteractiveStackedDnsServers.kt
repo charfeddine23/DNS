@@ -79,8 +79,8 @@ import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.GlassSurface
-import com.example.ui.theme.GlassSurfaceVariant
+import com.example.ui.theme.StackCardBackSurface
+import com.example.ui.theme.StackCardFrontSurface
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
@@ -557,7 +557,7 @@ private fun StackedDnsCardItem(
     }
 
     val cardBorderColor = if (isTopCard) EmeraldMint else GlassBorder
-    val cardBackground = if (isTopCard) GlassSurfaceVariant else GlassSurface
+    val cardBackground = if (isTopCard) StackCardFrontSurface else StackCardBackSurface
 
     GlassCard(
         modifier = modifier
@@ -567,7 +567,8 @@ private fun StackedDnsCardItem(
         borderColor = cardBorderColor,
         borderWidth = if (isTopCard) 1.7.dp else 1.dp,
         backgroundColor = cardBackground,
-        breathingGlow = isSettled
+        breathingGlow = isSettled,
+        surfaceAlphaOverride = 0.90f
     ) {
         Box(
             modifier = Modifier

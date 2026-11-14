@@ -62,6 +62,7 @@ fun GlassCard(
     backgroundColor: Color = GlassSurface,
     breathingGlow: Boolean = false,
     overrideThemeStyle: AppThemeStyle? = null,
+    surfaceAlphaOverride: Float? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val simpleMode = LocalSimpleMode.current
@@ -72,7 +73,13 @@ fun GlassCard(
         Box(
             modifier = modifier
                 .clip(shape)
-                .background(DarkSurfaceElevated)
+                .background(
+                    if (surfaceAlphaOverride != null) {
+                        DarkSurfaceElevated.copy(alpha = surfaceAlphaOverride)
+                    } else {
+                        DarkSurfaceElevated
+                    }
+                )
                 .border(1.dp, GlassBorder, shape)
         ) {
             content()
@@ -148,6 +155,11 @@ fun GlassCard(
         }
 
         AppThemeStyle.GLASS_PSD_MOCKUP -> {
+            val baseBackdrop = if (surfaceAlphaOverride != null) {
+                Modifier.background(backgroundColor.copy(alpha = surfaceAlphaOverride))
+            } else {
+                Modifier
+            }
             modifier
                 .shadow(
                     elevation = 16.dp,
@@ -156,13 +168,22 @@ fun GlassCard(
                     spotColor = animatedBorderColor.copy(alpha = 0.35f)
                 )
                 .clip(shape)
+                .then(baseBackdrop)
                 .background(
                     brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.14f),
-                            backgroundColor.copy(alpha = 0.62f),
-                            Color.White.copy(alpha = 0.05f)
-                        ),
+                        colors = if (surfaceAlphaOverride != null) {
+                            listOf(
+                                Color.White.copy(alpha = 0.06f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.14f)
+                            )
+                        } else {
+                            listOf(
+                                Color.White.copy(alpha = 0.14f),
+                                backgroundColor.copy(alpha = 0.62f),
+                                Color.White.copy(alpha = 0.05f)
+                            )
+                        },
                         start = Offset(0f, 0f),
                         end = Offset(900f, 900f)
                     )
@@ -174,8 +195,8 @@ fun GlassCard(
                         brush = Brush.linearGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.White.copy(alpha = 0.09f),
-                                Color.White.copy(alpha = 0.02f),
+                                Color.White.copy(alpha = if (surfaceAlphaOverride != null) 0.05f else 0.09f),
+                                Color.White.copy(alpha = 0.015f),
                                 Color.Transparent
                             ),
                             start = Offset(0f, 0f),
@@ -207,13 +228,28 @@ fun GlassCard(
                     spotColor = Color.Black.copy(alpha = 0.55f)
                 )
                 .clip(shape)
+                .then(
+                    if (surfaceAlphaOverride != null) {
+                        Modifier.background(backgroundColor.copy(alpha = surfaceAlphaOverride))
+                    } else {
+                        Modifier
+                    }
+                )
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            FrostedTint,
-                            Color(0xA6162231),
-                            Color(0xBD0F1722)
-                        )
+                        colors = if (surfaceAlphaOverride != null) {
+                            listOf(
+                                Color(0x18DCEEFF),
+                                Color(0xE6121A26),
+                                Color(0xE60D131D)
+                            )
+                        } else {
+                            listOf(
+                                FrostedTint,
+                                Color(0xA6162231),
+                                Color(0xBD0F1722)
+                            )
+                        }
                     )
                 )
                 .drawWithContent {
@@ -270,13 +306,20 @@ fun GlassCard(
                     spotColor = ElectricCyan.copy(alpha = 0.35f)
                 )
                 .clip(shape)
+                .then(
+                    if (surfaceAlphaOverride != null) {
+                        Modifier.background(backgroundColor.copy(alpha = surfaceAlphaOverride))
+                    } else {
+                        Modifier
+                    }
+                )
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            ElectricCyan.copy(alpha = 0.09f),
-                            HoloViolet.copy(alpha = 0.11f),
-                            backgroundColor.copy(alpha = 0.80f),
-                            HoloMagenta.copy(alpha = 0.07f)
+                            ElectricCyan.copy(alpha = if (surfaceAlphaOverride != null) 0.06f else 0.09f),
+                            HoloViolet.copy(alpha = if (surfaceAlphaOverride != null) 0.08f else 0.11f),
+                            backgroundColor.copy(alpha = surfaceAlphaOverride ?: 0.80f),
+                            HoloMagenta.copy(alpha = if (surfaceAlphaOverride != null) 0.05f else 0.07f)
                         ),
                         start = Offset(shift * 260f, 0f),
                         end = Offset(700f + shift * 220f, 700f)
@@ -323,13 +366,28 @@ fun GlassCard(
                     spotColor = ChromaticMagenta.copy(alpha = 0.22f)
                 )
                 .clip(shape)
+                .then(
+                    if (surfaceAlphaOverride != null) {
+                        Modifier.background(backgroundColor.copy(alpha = surfaceAlphaOverride))
+                    } else {
+                        Modifier
+                    }
+                )
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0x28E8F5FF),
-                            Color(0xC2111824),
-                            Color(0xD90A0E16)
-                        )
+                        colors = if (surfaceAlphaOverride != null) {
+                            listOf(
+                                Color(0x14E8F5FF),
+                                Color(0xE6111824),
+                                Color(0xE60A0E16)
+                            )
+                        } else {
+                            listOf(
+                                Color(0x28E8F5FF),
+                                Color(0xC2111824),
+                                Color(0xD90A0E16)
+                            )
+                        }
                     )
                 )
                 .drawWithContent {
