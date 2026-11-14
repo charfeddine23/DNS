@@ -82,6 +82,7 @@ import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.HoloMagenta
 import com.example.ui.theme.HoloViolet
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.viewmodel.DnsPulseViewModel
@@ -98,6 +99,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val simpleMode = LocalSimpleMode.current
     var showThemeSheet by remember { mutableStateOf(false) }
     val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
     val isBatteryUnrestricted = remember(context) {
@@ -180,13 +182,13 @@ fun SettingsScreen(
         // Multi-Theme Engine Card
         GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            borderColor = ElectricCyan.copy(alpha = 0.55f),
-            breathingGlow = true
+            borderColor = ElectricCyan.copy(alpha = if (simpleMode) 0.28f else 0.55f),
+            breathingGlow = !simpleMode
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { showThemeSheet = true }
+                    .clickable(enabled = !simpleMode) { showThemeSheet = true }
                     .padding(16.dp)
                     .testTag("multi_theme_engine_card"),
                 verticalAlignment = Alignment.CenterVertically,
@@ -203,7 +205,7 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.Default.Palette,
                             contentDescription = "Multi-Theme Engine",
-                            tint = ElectricCyan,
+                            tint = if (simpleMode) TextSecondary else ElectricCyan,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -216,8 +218,12 @@ fun SettingsScreen(
                             fontSize = 14.5.sp
                         )
                         Text(
-                            text = "Active: ${uiState.themeStyle.displayName}",
-                            color = ElectricCyan,
+                            text = if (simpleMode) {
+                                "Paused while Simple Mode is enabled"
+                            } else {
+                                "Active: ${uiState.themeStyle.displayName}"
+                            },
+                            color = if (simpleMode) TextSecondary else ElectricCyan,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -227,18 +233,65 @@ fun SettingsScreen(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(ElectricCyan.copy(alpha = 0.15f))
-                        .border(1.dp, ElectricCyan.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .background(ElectricCyan.copy(alpha = if (simpleMode) 0.08f else 0.15f))
+                        .border(
+                            1.dp,
+                            ElectricCyan.copy(alpha = if (simpleMode) 0.2f else 0.4f),
+                            RoundedCornerShape(8.dp)
+                        )
                         .padding(horizontal = 9.dp, vertical = 5.dp)
                 ) {
                     Text(
-                        text = uiState.themeStyle.shortBadge,
-                        color = ElectricCyan,
+                        text = if (simpleMode) "SIMPLE" else uiState.themeStyle.shortBadge,
+                        color = if (simpleMode) TextSecondary else ElectricCyan,
                         fontSize = 9.5.sp,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 0.8.sp
                     )
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Simple Mode Card
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            borderColor = if (uiState.simpleMode) EmeraldMint.copy(alpha = 0.45f) else GlassBorder
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.setSimpleMode(!uiState.simpleMode) }
+                    .padding(16.dp)
+                    .testTag("simple_mode_card"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(
+                        text = stringResource(R.string.simple_mode_title),
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.simple_mode_desc),
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+                Switch(
+                    checked = uiState.simpleMode,
+                    onCheckedChange = { viewModel.setSimpleMode(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = DeepVoidBlack,
+                        checkedTrackColor = EmeraldMint
+                    ),
+                    modifier = Modifier.testTag("simple_mode_switch")
+                )
             }
         }
 
@@ -288,19 +341,24 @@ fun SettingsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Breathing Aurora & Glow",
-                            color = TextPrimary,
+                            color = if (simpleMode) TextSecondary else TextPrimary,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "Living atmospheric nebula & energy pulse field",
+                            text = if (simpleMode) {
+                                "Disabled automatically in Simple Mode"
+                            } else {
+                                "Living atmospheric nebula & energy pulse field"
+                            },
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
                     }
                     Switch(
-                        checked = uiState.ambientGlow,
+                        checked = if (simpleMode) false else uiState.ambientGlow,
                         onCheckedChange = { viewModel.setAmbientGlow(it) },
+                        enabled = !simpleMode,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = DeepVoidBlack,
                             checkedTrackColor = ElectricCyan
@@ -316,7 +374,7 @@ fun SettingsScreen(
         // Background Keep-Alive / Battery Optimization Card
         GlassCard(
             modifier = Modifier.fillMaxWidth(),
-            breathingGlow = isBatteryUnrestricted
+            breathingGlow = !simpleMode && isBatteryUnrestricted
         ) {
             Row(
                 modifier = Modifier
@@ -437,45 +495,59 @@ fun SettingsScreen(
 
 @Composable
 private fun DeveloperShowcaseCard() {
+    val simpleMode = LocalSimpleMode.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "dev_card_press_scale"
-    )
+    val pressScale = if (simpleMode) {
+        1f
+    } else {
+        val animatedScale by animateFloatAsState(
+            targetValue = if (isPressed) 0.98f else 1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
+            label = "dev_card_press_scale"
+        )
+        animatedScale
+    }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "dev_showcase_glow")
-    val sweepPhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2f * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 5200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "dev_sweep_phase"
-    )
-    val orbitRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 6500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "dev_orbit_rotation"
-    )
-    val pulseGlow by infiniteTransition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dev_pulse_glow"
-    )
+    var sweepPhase = 0f
+    var orbitRotation = 0f
+    var pulseGlow = 0.65f
+    if (!simpleMode) {
+        val infiniteTransition = rememberInfiniteTransition(label = "dev_showcase_glow")
+        val animSweep by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = (2f * PI).toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 5200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "dev_sweep_phase"
+        )
+        val animOrbit by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 6500, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "dev_orbit_rotation"
+        )
+        val animPulse by infiniteTransition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 2200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "dev_pulse_glow"
+        )
+        sweepPhase = animSweep
+        orbitRotation = animOrbit
+        pulseGlow = animPulse
+    }
 
     val shape = RoundedCornerShape(24.dp)
     val shiftX = (cos(sweepPhase) + 1f) * 0.5f
@@ -485,52 +557,71 @@ private fun DeveloperShowcaseCard() {
         modifier = Modifier
             .fillMaxWidth()
             .scale(pressScale)
-            .shadow(
-                elevation = 20.dp,
-                shape = shape,
-                ambientColor = ElectricCyan.copy(alpha = 0.25f * pulseGlow),
-                spotColor = EmeraldMint.copy(alpha = 0.32f * pulseGlow)
+            .then(
+                if (simpleMode) {
+                    Modifier
+                } else {
+                    Modifier.shadow(
+                        elevation = 20.dp,
+                        shape = shape,
+                        ambientColor = ElectricCyan.copy(alpha = 0.25f * pulseGlow),
+                        spotColor = EmeraldMint.copy(alpha = 0.32f * pulseGlow)
+                    )
+                }
             )
             .testTag("developer_showcase_card"),
         cornerRadius = 24.dp,
-        borderColor = ElectricCyan.copy(alpha = 0.65f),
-        borderWidth = 1.5.dp,
-        breathingGlow = true
+        borderColor = ElectricCyan.copy(alpha = if (simpleMode) 0.28f else 0.65f),
+        borderWidth = if (simpleMode) 1.dp else 1.5.dp,
+        breathingGlow = !simpleMode
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .drawWithContent {
-                    drawContent()
-                    // Flowing liquid-prism specular sheen across the card
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                ElectricCyan.copy(alpha = 0.09f * pulseGlow),
-                                HoloViolet.copy(alpha = 0.08f * pulseGlow),
-                                EmeraldMint.copy(alpha = 0.06f * pulseGlow),
-                                Color.Transparent
-                            ),
-                            start = Offset(size.width * (shiftX - 0.5f), size.height * (shiftY - 0.5f)),
-                            end = Offset(size.width * (shiftX + 0.7f), size.height * (shiftY + 0.7f))
-                        )
-                    )
-                }
-                .border(
-                    width = 1.4.dp,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            ElectricCyan.copy(alpha = 0.85f * pulseGlow),
-                            EmeraldMint.copy(alpha = 0.75f),
-                            HoloViolet.copy(alpha = 0.75f),
-                            HoloMagenta.copy(alpha = 0.55f * pulseGlow),
-                            ElectricCyan.copy(alpha = 0.85f)
-                        ),
-                        start = Offset(shiftX * 650f, 0f),
-                        end = Offset(750f - shiftX * 500f, 520f)
-                    ),
-                    shape = shape
+                .then(
+                    if (simpleMode) {
+                        Modifier
+                    } else {
+                        Modifier
+                            .drawWithContent {
+                                drawContent()
+                                // Flowing liquid-prism specular sheen across the card
+                                drawRect(
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            ElectricCyan.copy(alpha = 0.09f * pulseGlow),
+                                            HoloViolet.copy(alpha = 0.08f * pulseGlow),
+                                            EmeraldMint.copy(alpha = 0.06f * pulseGlow),
+                                            Color.Transparent
+                                        ),
+                                        start = Offset(
+                                            size.width * (shiftX - 0.5f),
+                                            size.height * (shiftY - 0.5f)
+                                        ),
+                                        end = Offset(
+                                            size.width * (shiftX + 0.7f),
+                                            size.height * (shiftY + 0.7f)
+                                        )
+                                    )
+                                )
+                            }
+                            .border(
+                                width = 1.4.dp,
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        ElectricCyan.copy(alpha = 0.85f * pulseGlow),
+                                        EmeraldMint.copy(alpha = 0.75f),
+                                        HoloViolet.copy(alpha = 0.75f),
+                                        HoloMagenta.copy(alpha = 0.55f * pulseGlow),
+                                        ElectricCyan.copy(alpha = 0.85f)
+                                    ),
+                                    start = Offset(shiftX * 650f, 0f),
+                                    end = Offset(750f - shiftX * 500f, 520f)
+                                ),
+                                shape = shape
+                            )
+                    }
                 )
                 .clickable(
                     interactionSource = interactionSource,
@@ -549,38 +640,40 @@ private fun DeveloperShowcaseCard() {
                         modifier = Modifier.size(54.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val r = size.minDimension * 0.46f
-                            val c = Offset(size.width / 2f, size.height / 2f)
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        ElectricCyan.copy(alpha = 0.34f * pulseGlow),
-                                        EmeraldMint.copy(alpha = 0.14f),
-                                        Color.Transparent
-                                    )
-                                ),
-                                radius = size.minDimension * 0.52f,
-                                center = c
-                            )
-                            drawArc(
-                                color = ElectricCyan.copy(alpha = 0.9f),
-                                startAngle = orbitRotation,
-                                sweepAngle = 110f,
-                                useCenter = false,
-                                topLeft = Offset(c.x - r, c.y - r),
-                                size = Size(r * 2f, r * 2f),
-                                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-                            )
-                            drawArc(
-                                color = EmeraldMint.copy(alpha = 0.85f),
-                                startAngle = orbitRotation + 180f,
-                                sweepAngle = 95f,
-                                useCenter = false,
-                                topLeft = Offset(c.x - r, c.y - r),
-                                size = Size(r * 2f, r * 2f),
-                                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-                            )
+                        if (!simpleMode) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val r = size.minDimension * 0.46f
+                                val c = Offset(size.width / 2f, size.height / 2f)
+                                drawCircle(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(
+                                            ElectricCyan.copy(alpha = 0.34f * pulseGlow),
+                                            EmeraldMint.copy(alpha = 0.14f),
+                                            Color.Transparent
+                                        )
+                                    ),
+                                    radius = size.minDimension * 0.52f,
+                                    center = c
+                                )
+                                drawArc(
+                                    color = ElectricCyan.copy(alpha = 0.9f),
+                                    startAngle = orbitRotation,
+                                    sweepAngle = 110f,
+                                    useCenter = false,
+                                    topLeft = Offset(c.x - r, c.y - r),
+                                    size = Size(r * 2f, r * 2f),
+                                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                                drawArc(
+                                    color = EmeraldMint.copy(alpha = 0.85f),
+                                    startAngle = orbitRotation + 180f,
+                                    sweepAngle = 95f,
+                                    useCenter = false,
+                                    topLeft = Offset(c.x - r, c.y - r),
+                                    size = Size(r * 2f, r * 2f),
+                                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                            }
                         }
                         Box(
                             modifier = Modifier

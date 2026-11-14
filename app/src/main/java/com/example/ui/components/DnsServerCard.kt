@@ -56,6 +56,7 @@ import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassSurface
 import com.example.ui.theme.GlassSurfaceVariant
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
@@ -66,39 +67,56 @@ fun DnsServerCard(
     onSelect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val simpleMode = LocalSimpleMode.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.975f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "server_card_scale"
-    )
+    val pressScale = if (simpleMode) {
+        1f
+    } else {
+        val animatedScale by animateFloatAsState(
+            targetValue = if (isPressed) 0.975f else 1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium
+            ),
+            label = "server_card_scale"
+        )
+        animatedScale
+    }
 
-    val latencyColor by animateColorAsState(
-        targetValue = when (profile.latencyStatus) {
-            LatencyStatus.EXCELLENT -> EmeraldMint
-            LatencyStatus.MODERATE -> AmberWarning
-            LatencyStatus.POOR -> CrimsonPulse
-            LatencyStatus.UNKNOWN -> TextSecondary
-        },
-        animationSpec = tween(400),
-        label = "latency_color"
-    )
+    val targetLatencyColor = when (profile.latencyStatus) {
+        LatencyStatus.EXCELLENT -> EmeraldMint
+        LatencyStatus.MODERATE -> AmberWarning
+        LatencyStatus.POOR -> CrimsonPulse
+        LatencyStatus.UNKNOWN -> TextSecondary
+    }
+    val latencyColor = if (simpleMode) {
+        targetLatencyColor
+    } else {
+        val animatedColor by animateColorAsState(
+            targetValue = targetLatencyColor,
+            animationSpec = tween(400),
+            label = "latency_color"
+        )
+        animatedColor
+    }
 
     val targetFillRatio = when (val ms = profile.latencyMs) {
         null -> 0f
         else -> (1f - (ms.coerceIn(5L, 180L) / 200f)).coerceIn(0.15f, 1f)
     }
 
-    val animatedBarFraction by animateFloatAsState(
-        targetValue = targetFillRatio,
-        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
-        label = "latency_bar_fill"
-    )
+    val animatedBarFraction = if (simpleMode) {
+        targetFillRatio
+    } else {
+        val animBar by animateFloatAsState(
+            targetValue = targetFillRatio,
+            animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+            label = "latency_bar_fill"
+        )
+        animBar
+    }
 
     GlassCard(
         modifier = modifier
@@ -108,7 +126,7 @@ fun DnsServerCard(
         borderColor = if (isSelected) ElectricCyan else GlassBorder,
         borderWidth = if (isSelected) 1.5.dp else 1.dp,
         backgroundColor = if (isSelected) GlassSurfaceVariant else GlassSurface,
-        breathingGlow = isSelected
+        breathingGlow = !simpleMode && isSelected
     ) {
         Column(
             modifier = Modifier

@@ -17,4 +17,6 @@
     <string name="dev_info_build_label">Build °</string>
     <string name="dev_info_last_push_label">Last Push:</string>
     <string name="dev_info_studio_badge">PULSE TECH</string>
+    <string name="simple_mode_title">Simple Mode</string>
+    <string name="simple_mode_desc">Disable animations, stacks &amp; visual effects for a clean UI</string>
 </resources>

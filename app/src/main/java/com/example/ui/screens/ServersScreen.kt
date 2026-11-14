@@ -59,6 +59,7 @@ import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassBorderLuminous
 import com.example.ui.theme.GlassSurfaceVariant
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.viewmodel.DnsPulseViewModel
@@ -71,6 +72,7 @@ fun ServersScreen(
     viewModel: DnsPulseViewModel,
     modifier: Modifier = Modifier
 ) {
+    val simpleMode = LocalSimpleMode.current
     var showAddCustomDialog by remember { mutableStateOf(false) }
 
     val measuredServers = remember(uiState.vpnServers) {
@@ -142,7 +144,7 @@ fun ServersScreen(
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 borderColor = GlassBorderLuminous,
-                breathingGlow = uiState.isPinging || fastestServer != null
+                breathingGlow = !simpleMode && (uiState.isPinging || fastestServer != null)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(

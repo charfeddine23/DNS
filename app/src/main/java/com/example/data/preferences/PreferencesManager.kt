@@ -21,6 +21,7 @@ class PreferencesManager(private val context: Context) {
         val KEY_SELECTED_DOT_PRESET = stringPreferencesKey("key_selected_dot_preset")
         val KEY_GLOW_INTENSITY = booleanPreferencesKey("key_glow_intensity")
         val KEY_THEME_STYLE = stringPreferencesKey("key_theme_style")
+        val KEY_SIMPLE_MODE = booleanPreferencesKey("key_simple_mode")
     }
 
     val engineModeFlow: Flow<DnsEngineMode> = context.dataStore.data.map { prefs ->
@@ -57,6 +58,10 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
+    val simpleModeFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_SIMPLE_MODE] ?: false
+    }
+
     suspend fun setEngineMode(mode: DnsEngineMode) {
         context.dataStore.edit { prefs ->
             prefs[KEY_ENGINE_MODE] = mode.name
@@ -90,6 +95,12 @@ class PreferencesManager(private val context: Context) {
     suspend fun setThemeStyle(style: AppThemeStyle) {
         context.dataStore.edit { prefs ->
             prefs[KEY_THEME_STYLE] = style.name
+        }
+    }
+
+    suspend fun setSimpleMode(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SIMPLE_MODE] = enabled
         }
     }
 }

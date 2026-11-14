@@ -96,6 +96,7 @@ import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassTopSpecular
 import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.NeuBaseDark
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -127,7 +128,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()
-            DnsPulseTheme(themeStyle = uiState.themeStyle) {
+            DnsPulseTheme(
+                themeStyle = uiState.themeStyle,
+                simpleMode = uiState.simpleMode
+            ) {
                 val snackbarHostState = remember { SnackbarHostState() }
                 val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
                 val coroutineScope = rememberCoroutineScope()
@@ -135,13 +139,17 @@ class MainActivity : ComponentActivity() {
 
                 val slideToPage: (Int) -> Unit = { targetPage ->
                     coroutineScope.launch {
-                        pagerState.animateScrollToPage(
-                            page = targetPage,
-                            animationSpec = spring(
-                                dampingRatio = 0.86f,
-                                stiffness = Spring.StiffnessMediumLow
+                        if (uiState.simpleMode) {
+                            pagerState.scrollToPage(targetPage)
+                        } else {
+                            pagerState.animateScrollToPage(
+                                page = targetPage,
+                                animationSpec = spring(
+                                    dampingRatio = 0.86f,
+                                    stiffness = Spring.StiffnessMediumLow
+                                )
                             )
-                        )
+                        }
                     }
                 }
 
@@ -223,13 +231,15 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(DeepVoidBlack)
                 ) {
-                    // Full-bleed living, breathing cyber atmosphere behind all pages
-                    BreathingAtmosphere(
-                        isProtected = isProtected,
-                        isAdGuardShield = isAdGuardDoT,
-                        ambientGlowEnabled = uiState.ambientGlow,
-                        pageOffsetFraction = continuousPagePos
-                    )
+                    // Full-bleed living, breathing cyber atmosphere behind all pages (omitted in Simple Mode)
+                    if (!uiState.simpleMode) {
+                        BreathingAtmosphere(
+                            isProtected = isProtected,
+                            isAdGuardShield = isAdGuardDoT,
+                            ambientGlowEnabled = uiState.ambientGlow,
+                            pageOffsetFraction = continuousPagePos
+                        )
+                    }
 
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
@@ -264,12 +274,18 @@ class MainActivity : ComponentActivity() {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .graphicsLayer {
-                                            val scale = lerp(1f, 0.93f, pageOffset)
-                                            scaleX = scale
-                                            scaleY = scale
-                                            alpha = lerp(1f, 0.65f, pageOffset)
-                                        }
+                                        .then(
+                                            if (uiState.simpleMode) {
+                                                Modifier
+                                            } else {
+                                                Modifier.graphicsLayer {
+                                                    val scale = lerp(1f, 0.93f, pageOffset)
+                                                    scaleX = scale
+                                                    scaleY = scale
+                                                    alpha = lerp(1f, 0.65f, pageOffset)
+                                                }
+                                            }
+                                        )
                                 ) {
                                     when (page) {
                                         0 -> HomeScreen(
@@ -375,17 +391,25 @@ private fun FloatingPulseNavBar(
     }
 
     val themeStyle = LocalAppThemeStyle.current
-    val dockShape = RoundedCornerShape(28.dp)
-    val resolvedAccent = if (themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS && activeAccent == ElectricCyan) {
+    val simpleMode = LocalSimpleMode.current
+    val resolvedAccent = if (!simpleMode &&
+        themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS &&
+        activeAccent == ElectricCyan
+    ) {
         HoloViolet
     } else {
         activeAccent
     }
-    val animatedAccent by animateColorAsState(
-        targetValue = resolvedAccent,
-        animationSpec = tween(500),
-        label = "nav_accent"
-    )
+    val animatedAccent = if (simpleMode) {
+        resolvedAccent
+    } else {
+        val animated by animateColorAsState(
+            targetValue = resolvedAccent,
+            animationSpec = tween(500),
+            label = "nav_accent"
+        )
+        animated
+    }
 
     GlassCard(
         modifier = modifier
@@ -395,9 +419,15 @@ private fun FloatingPulseNavBar(
             .testTag("main_bottom_nav"),
         cornerRadius = 28.dp,
         borderColor = animatedAccent.copy(alpha = 0.48f),
-        backgroundColor = if (themeStyle == AppThemeStyle.NEUMORPHISM) NeuBaseDark else DarkSurfaceElevated,
-        breathingGlow = themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS ||
-            themeStyle == AppThemeStyle.CHROMATIC_FROSTED_LIQUID
+        backgroundColor = if (!simpleMode && themeStyle == AppThemeStyle.NEUMORPHISM) {
+            NeuBaseDark
+        } else {
+            DarkSurfaceElevated
+        },
+        breathingGlow = !simpleMode && (
+            themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS ||
+                themeStyle == AppThemeStyle.CHROMATIC_FROSTED_LIQUID
+            )
     ) {
         BoxWithConstraints(
             modifier = Modifier
@@ -417,8 +447,8 @@ private fun FloatingPulseNavBar(
                     .background(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                animatedAccent.copy(alpha = 0.24f),
-                                animatedAccent.copy(alpha = 0.09f)
+                                animatedAccent.copy(alpha = if (simpleMode) 0.16f else 0.24f),
+                                animatedAccent.copy(alpha = if (simpleMode) 0.08f else 0.09f)
                             )
                         )
                     )
@@ -435,14 +465,19 @@ private fun FloatingPulseNavBar(
             ) {
                 tabs.forEach { tab ->
                     val isSelected = currentPage == tab.index
-                    val iconScale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.12f else 1f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMedium
-                        ),
-                        label = "tab_icon_scale_${tab.index}"
-                    )
+                    val iconScale = if (simpleMode) {
+                        1f
+                    } else {
+                        val animatedScale by animateFloatAsState(
+                            targetValue = if (isSelected) 1.12f else 1f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            ),
+                            label = "tab_icon_scale_${tab.index}"
+                        )
+                        animatedScale
+                    }
 
                     Column(
                         modifier = Modifier

@@ -48,6 +48,7 @@ data class HomeUiState(
     val shizukuStatus: ShizukuStatus = ShizukuStatus.NOT_AVAILABLE,
     val autoStartBoot: Boolean = false,
     val ambientGlow: Boolean = true,
+    val simpleMode: Boolean = false,
     val themeStyle: AppThemeStyle = AppThemeStyle.CHROMATIC_FROSTED_LIQUID,
     val updateState: UpdateDownloadState = UpdateDownloadState.Idle,
     val showUpdateDialog: Boolean = false
@@ -102,6 +103,11 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.themeStyleFlow.collect { style ->
                 _uiState.value = _uiState.value.copy(themeStyle = style)
+            }
+        }
+        viewModelScope.launch {
+            prefs.simpleModeFlow.collect { enabled ->
+                _uiState.value = _uiState.value.copy(simpleMode = enabled)
             }
         }
     }
@@ -164,6 +170,13 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.setThemeStyle(style)
             _uiState.value = _uiState.value.copy(themeStyle = style)
+        }
+    }
+
+    fun setSimpleMode(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setSimpleMode(enabled)
+            _uiState.value = _uiState.value.copy(simpleMode = enabled)
         }
     }
 

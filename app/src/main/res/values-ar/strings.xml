@@ -4,4 +4,6 @@
     <string name="dev_info_build_label">رقم البناء</string>
     <string name="dev_info_last_push_label">تاريخ آخر تحديث</string>
     <string name="dev_info_studio_badge">PULSE TECH</string>
+    <string name="simple_mode_title">الوضع العادي (Simple Mode)</string>
+    <string name="simple_mode_desc">إيقاف التأثيرات والألوان المتحركة والمكدّس لتبسيط الواجهة</string>
 </resources>

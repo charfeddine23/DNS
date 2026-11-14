@@ -1,8 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/ic_dns_pulse_1794483665827"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle dark-blue inner orb fill with transparent outer area -->
+    <path
+        android:fillAlpha="0.55"
+        android:fillColor="#16284A"
+        android:pathData="M 54,30.5 a 23.5,23.5 0 1,1 0,47 a 23.5,23.5 0 1,1 0,-47 Z"
+        android:strokeColor="#355184"
+        android:strokeWidth="3.4" />
+
+    <!-- Mint/Cyan Pulse Waveform -->
+    <path
+        android:pathData="M 23.0,57.0 L 37.0,57.0 L 42.8,48.5 L 48.0,64.5 L 54.2,40.0 L 60.2,57.0 L 85.0,57.0"
+        android:strokeColor="#18E0BC"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3.8" />
+
+    <!-- Top Node (12 o'clock) -->
+    <path
+        android:fillColor="#F4F7FB"
+        android:pathData="M 50.5,30.5 a 3.5,3.5 0 1,0 7,0 a 3.5,3.5 0 1,0 -7,0 Z" />
+
+    <!-- Bottom-Left Node (8 o'clock) -->
+    <path
+        android:fillColor="#F4F7FB"
+        android:pathData="M 30.15,65.75 a 3.5,3.5 0 1,0 7,0 a 3.5,3.5 0 1,0 -7,0 Z" />
+
+    <!-- Bottom-Right Node (4 o'clock) -->
+    <path
+        android:fillColor="#F4F7FB"
+        android:pathData="M 70.85,65.75 a 3.5,3.5 0 1,0 7,0 a 3.5,3.5 0 1,0 -7,0 Z" />
+</vector>

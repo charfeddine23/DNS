@@ -5,6 +5,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -84,6 +86,7 @@ import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassSurface
 import com.example.ui.theme.GlassSurfaceVariant
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.utils.PrivateDnsMode
@@ -100,6 +103,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val simpleMode = LocalSimpleMode.current
     var showExpertSheet by remember { mutableStateOf(false) }
 
     val vpnLauncher = rememberLauncherForActivityResult(
@@ -124,15 +128,20 @@ fun HomeScreen(
         uiState.activeVpnServerName
     }
 
-    val liveDotPulse by rememberInfiniteTransition(label = "live_dot").animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "live_dot_alpha"
-    )
+    val liveDotPulse = if (simpleMode) {
+        1f
+    } else {
+        val animatedPulse by rememberInfiniteTransition(label = "live_dot").animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "live_dot_alpha"
+        )
+        animatedPulse
+    }
 
     LazyColumn(
         modifier = modifier
@@ -308,7 +317,7 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 16.dp,
                 borderColor = statusTint.copy(alpha = 0.45f),
-                breathingGlow = isAnyActive
+                breathingGlow = !simpleMode && isAnyActive
             ) {
                 Row(
                     modifier = Modifier
@@ -374,23 +383,25 @@ fun HomeScreen(
             }
         }
 
-        // Interactive Stacked DNS Servers Carousel (Vertical Drag & Release to Select & Activate)
-        item {
-            InteractiveStackedDnsServers(
-                servers = uiState.vpnServers,
-                selectedServerId = uiState.selectedVpnServerId,
-                isEngineActive = isAnyActive,
-                onServerSettledOnTop = { settledServer ->
-                    viewModel.activateServerFromDeck(
-                        server = settledServer,
-                        context = context,
-                        onVpnPermissionRequired = { prepareIntent ->
-                            vpnLauncher.launch(prepareIntent)
-                        },
-                        onPrivateDnsFallback = onFallbackRequired
-                    )
-                }
-            )
+        // Interactive Stacked DNS Servers Carousel (hidden in Simple Mode)
+        if (!simpleMode) {
+            item {
+                InteractiveStackedDnsServers(
+                    servers = uiState.vpnServers,
+                    selectedServerId = uiState.selectedVpnServerId,
+                    isEngineActive = isAnyActive,
+                    onServerSettledOnTop = { settledServer ->
+                        viewModel.activateServerFromDeck(
+                            server = settledServer,
+                            context = context,
+                            onVpnPermissionRequired = { prepareIntent ->
+                                vpnLauncher.launch(prepareIntent)
+                            },
+                            onPrivateDnsFallback = onFallbackRequired
+                        )
+                    }
+                )
+            }
         }
 
         // Smooth Horizontal Slide Between Private DNS Controls & Local VPN Servers
@@ -398,21 +409,25 @@ fun HomeScreen(
             AnimatedContent(
                 targetState = uiState.engineMode,
                 transitionSpec = {
-                    val forward = targetState == DnsEngineMode.LOCAL_VPN
-                    (slideInHorizontally(
-                        animationSpec = spring(
-                            dampingRatio = 0.86f,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
-                    ) { width -> if (forward) width else -width } + fadeIn(tween(260)))
-                        .togetherWith(
-                            slideOutHorizontally(
-                                animationSpec = spring(
-                                    dampingRatio = 0.86f,
-                                    stiffness = Spring.StiffnessMediumLow
-                                )
-                            ) { width -> if (forward) -width else width } + fadeOut(tween(200))
-                        )
+                    if (simpleMode) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        val forward = targetState == DnsEngineMode.LOCAL_VPN
+                        (slideInHorizontally(
+                            animationSpec = spring(
+                                dampingRatio = 0.86f,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        ) { width -> if (forward) width else -width } + fadeIn(tween(260)))
+                            .togetherWith(
+                                slideOutHorizontally(
+                                    animationSpec = spring(
+                                        dampingRatio = 0.86f,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                ) { width -> if (forward) -width else width } + fadeOut(tween(200))
+                            )
+                    }
                 },
                 label = "engine_panel_slide"
             ) { mode ->
@@ -518,6 +533,7 @@ private fun EngineSegmentedSlider(
     selectedMode: DnsEngineMode,
     onSelectMode: (DnsEngineMode) -> Unit
 ) {
+    val simpleMode = LocalSimpleMode.current
     val selectedIndex = if (selectedMode == DnsEngineMode.PRIVATE_DNS) 0 else 1
     BoxWithConstraints(
         modifier = Modifier
@@ -529,14 +545,19 @@ private fun EngineSegmentedSlider(
             .padding(4.dp)
     ) {
         val segmentWidth = maxWidth / 2
-        val indicatorOffset by animateDpAsState(
-            targetValue = segmentWidth * selectedIndex,
-            animationSpec = spring(
-                dampingRatio = 0.80f,
-                stiffness = Spring.StiffnessMediumLow
-            ),
-            label = "segment_slide_offset"
-        )
+        val indicatorOffset = if (simpleMode) {
+            segmentWidth * selectedIndex
+        } else {
+            val animatedOffset by animateDpAsState(
+                targetValue = segmentWidth * selectedIndex,
+                animationSpec = spring(
+                    dampingRatio = 0.80f,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "segment_slide_offset"
+            )
+            animatedOffset
+        }
 
         // Sliding luminous pill
         Box(

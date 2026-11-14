@@ -70,6 +70,7 @@ import com.example.ui.theme.FrostedBorder
 import com.example.ui.theme.HoloMagenta
 import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.NeuBaseDark
 import com.example.ui.theme.NeuHighlightEdge
 import com.example.ui.theme.NeuShadowEdge
@@ -86,9 +87,73 @@ fun HeroPulseButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val simpleMode = LocalSimpleMode.current
     val themeStyle = LocalAppThemeStyle.current
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
+
+    if (simpleMode) {
+        val statusColor = when {
+            !isActive -> CrimsonPulse
+            isAdGuardShield -> EmeraldMint
+            else -> ElectricCyan
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier
+                .size(200.dp)
+                .testTag("hero_pulse_button_container")
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(160.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF131820))
+                    .border(2.dp, statusColor.copy(alpha = 0.75f), CircleShape)
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = ripple(bounded = true, color = statusColor),
+                        onClick = onClick
+                    )
+                    .testTag("hero_pulse_button")
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = when {
+                            !isActive -> Icons.Default.PowerSettingsNew
+                            isAdGuardShield -> Icons.Default.Shield
+                            else -> Icons.Default.Bolt
+                        },
+                        contentDescription = "Pulse Status",
+                        tint = statusColor,
+                        modifier = Modifier.size(38.dp)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = if (isActive) "PROTECTED" else "OFFLINE",
+                        color = if (isActive) statusColor else TextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        letterSpacing = 1.4.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (isActive) {
+                            if (latencyMs != null && latencyMs > 0) "${latencyMs} ms" else "ACTIVE"
+                        } else {
+                            "Tap to Connect"
+                        },
+                        color = if (isActive) TextPrimary else TextSecondary,
+                        fontSize = 11.sp,
+                        fontFamily = if (isActive) FontFamily.Monospace else FontFamily.Default
+                    )
+                }
+            }
+        }
+        return
+    }
+
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val activeGlowColor by animateColorAsState(

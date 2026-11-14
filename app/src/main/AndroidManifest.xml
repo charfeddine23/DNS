@@ -69,7 +69,7 @@
         <!-- Quick Settings Tile for One-Tap DNS Switcher -->
         <service
             android:name=".service.DnsPulseTileService"
-            android:icon="@drawable/ic_dns_pulse_1794483665827"
+            android:icon="@drawable/ic_qs_dns_pulse"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">

@@ -80,11 +80,16 @@ private fun colorSchemeForStyle(style: AppThemeStyle) = when (style) {
 @Composable
 fun DnsPulseTheme(
     themeStyle: AppThemeStyle = AppThemeStyle.CHROMATIC_FROSTED_LIQUID,
+    simpleMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    CompositionLocalProvider(LocalAppThemeStyle provides themeStyle) {
+    val effectiveStyle = if (simpleMode) AppThemeStyle.GLASS_PSD_MOCKUP else themeStyle
+    CompositionLocalProvider(
+        LocalAppThemeStyle provides effectiveStyle,
+        LocalSimpleMode provides simpleMode
+    ) {
         MaterialTheme(
-            colorScheme = colorSchemeForStyle(themeStyle),
+            colorScheme = colorSchemeForStyle(effectiveStyle),
             typography = Typography,
             content = content
         )

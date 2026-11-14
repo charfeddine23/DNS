@@ -58,6 +58,7 @@ import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassBorderLuminous
 import com.example.ui.theme.GlassSurfaceVariant
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.utils.PrivateDnsMode
@@ -74,21 +75,28 @@ fun PrivateDnsShieldCard(
     onLaunchWirelessSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val simpleMode = LocalSimpleMode.current
     val isAdGuardActive = privateDnsState.mode is PrivateDnsMode.Strict &&
         privateDnsState.hostname.equals("dns.adguard.com", ignoreCase = true)
     val isCustomStrictActive = privateDnsState.mode is PrivateDnsMode.Strict
 
-    val accentColor by animateColorAsState(
-        targetValue = if (isAdGuardActive) EmeraldMint else ElectricCyan,
-        animationSpec = tween(500),
-        label = "shield_card_accent"
-    )
+    val targetAccent = if (isAdGuardActive) EmeraldMint else ElectricCyan
+    val accentColor = if (simpleMode) {
+        targetAccent
+    } else {
+        val animatedAccent by animateColorAsState(
+            targetValue = targetAccent,
+            animationSpec = tween(500),
+            label = "shield_card_accent"
+        )
+        animatedAccent
+    }
 
     GlassCard(
         modifier = modifier.fillMaxWidth(),
         borderColor = if (isAdGuardActive) EmeraldMint else GlassBorderLuminous,
         borderWidth = if (isAdGuardActive) 1.5.dp else 1.dp,
-        breathingGlow = isAdGuardActive || isCustomStrictActive
+        breathingGlow = !simpleMode && (isAdGuardActive || isCustomStrictActive)
     ) {
         Column(
             modifier = Modifier
@@ -203,11 +211,16 @@ fun PrivateDnsShieldCard(
             val adguardPreset = presets.firstOrNull { it.isAdGuardShield } ?: presets.first()
             val ctaInteraction = remember { MutableInteractionSource() }
             val ctaPressed by ctaInteraction.collectIsPressedAsState()
-            val ctaScale by animateFloatAsState(
-                targetValue = if (ctaPressed) 0.97f else 1f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                label = "adguard_cta_scale"
-            )
+            val ctaScale = if (simpleMode) {
+                1f
+            } else {
+                val animatedScale by animateFloatAsState(
+                    targetValue = if (ctaPressed) 0.97f else 1f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                    label = "adguard_cta_scale"
+                )
+                animatedScale
+            }
 
             Button(
                 onClick = {

@@ -33,6 +33,7 @@ import com.example.ui.theme.AppThemeStyle
 import com.example.ui.theme.ChromaticAmber
 import com.example.ui.theme.ChromaticCyan
 import com.example.ui.theme.ChromaticMagenta
+import com.example.ui.theme.DarkSurfaceElevated
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.FrostedBorder
@@ -43,6 +44,7 @@ import com.example.ui.theme.GlassTopSpecular
 import com.example.ui.theme.HoloMagenta
 import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.NeuBaseDark
 import com.example.ui.theme.NeuHighlightEdge
 import com.example.ui.theme.NeuShadowEdge
@@ -62,8 +64,22 @@ fun GlassCard(
     overrideThemeStyle: AppThemeStyle? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val simpleMode = LocalSimpleMode.current
     val themeStyle = overrideThemeStyle ?: LocalAppThemeStyle.current
     val shape = RoundedCornerShape(cornerRadius)
+
+    if (simpleMode && overrideThemeStyle == null) {
+        Box(
+            modifier = modifier
+                .clip(shape)
+                .background(DarkSurfaceElevated)
+                .border(1.dp, GlassBorder, shape)
+        ) {
+            content()
+        }
+        return
+    }
+
     val animatedBorderColor by animateColorAsState(
         targetValue = borderColor,
         animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),

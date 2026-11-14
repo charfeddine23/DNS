@@ -66,6 +66,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.BuildConfig
 import com.example.R
 import com.example.ui.theme.GlassBorder
+import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.UpdateCardInner
@@ -233,10 +234,13 @@ fun UpdateDialog(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
+                        val simpleMode = LocalSimpleMode.current
                         UpdateRocketEmblem(
-                            isAnimating = updateState is UpdateDownloadState.Available ||
-                                updateState is UpdateDownloadState.Downloading ||
-                                updateState is UpdateDownloadState.ReadyToInstall
+                            isAnimating = !simpleMode && (
+                                updateState is UpdateDownloadState.Available ||
+                                    updateState is UpdateDownloadState.Downloading ||
+                                    updateState is UpdateDownloadState.ReadyToInstall
+                                )
                         )
 
                         Spacer(modifier = Modifier.height(20.dp))
@@ -545,28 +549,31 @@ private fun LuxuryCrimsonButton(
 
 @Composable
 private fun UpdateRocketEmblem(isAnimating: Boolean) {
-    val infiniteTransition = rememberInfiniteTransition(label = "rocket_float")
-    val floatY by infiniteTransition.animateFloat(
-        initialValue = -2.2f,
-        targetValue = 2.2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "rocket_y"
-    )
-    val flameScale by infiniteTransition.animateFloat(
-        initialValue = 0.92f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 420, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "flame_scale"
-    )
-
-    val offsetY = if (isAnimating) floatY else 0f
-    val currentFlameScale = if (isAnimating) flameScale else 1f
+    var offsetY = 0f
+    var currentFlameScale = 1f
+    if (isAnimating) {
+        val infiniteTransition = rememberInfiniteTransition(label = "rocket_float")
+        val floatY by infiniteTransition.animateFloat(
+            initialValue = -2.2f,
+            targetValue = 2.2f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "rocket_y"
+        )
+        val flameScale by infiniteTransition.animateFloat(
+            initialValue = 0.92f,
+            targetValue = 1.08f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "flame_scale"
+        )
+        offsetY = floatY
+        currentFlameScale = flameScale
+    }
 
     Canvas(modifier = Modifier.size(116.dp)) {
         val w = size.width
