@@ -10,19 +10,27 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.CacheControl
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.RandomAccessFile
 import java.net.ConnectException
+import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
+import java.net.URL
 import java.net.UnknownHostException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
@@ -50,7 +58,8 @@ sealed interface UpdateDownloadState {
         val release: GitHubReleaseInfo,
         val progressPercent: Int,
         val downloadedBytes: Long,
-        val totalBytes: Long
+        val totalBytes: Long,
+        val speedBytesPerSec: Long = 0L
     ) : UpdateDownloadState
     data class ReadyToInstall(val apkFile: File, val release: GitHubReleaseInfo) : UpdateDownloadState
     data class Error(val message: String, val release: GitHubReleaseInfo? = null) : UpdateDownloadState
@@ -74,6 +83,24 @@ object UpdateManager {
             .readTimeout(30, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
+
+    /**
+     * Dedicated HTTP/1.1 streaming client for large binary APK downloads across GitHub CDN
+     * redirects (avoids HTTP/2 stream stalls and sets explicit call timeouts).
+     */
+    private val downloadClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .protocols(listOf(Protocol.HTTP_1_1))
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(5, TimeUnit.MINUTES)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .retryOnConnectionFailure(true)
             .build()
     }
 
@@ -239,6 +266,7 @@ object UpdateManager {
     ): UpdateCheckResult {
         val apkRegex = Regex("""href="(/$REPO_PATH/releases/download/[^"]+\.apk)"""", RegexOption.IGNORE_CASE)
         val relativeHref = apkRegex.find(expandedAssetsHtml)?.groupValues?.getOrNull(1)
+            ?.replace("&amp;", "&")
         val apkName = relativeHref?.substringAfterLast("/")?.let { Uri.decode(it) }
 
         val candidateVersion = resolveBestVersionCandidate(
@@ -474,86 +502,306 @@ object UpdateManager {
     }
 
     /**
-     * Downloads the APK with OkHttp into the app's updates cache directory while reporting progress.
+     * Downloads the APK safely into a temp `.part` file in app internal cache (`updates/`),
+     * reporting continuous progress (time + byte throttled even when Content-Length is unknown),
+     * supporting coroutine cancellation, automatic retry, and HttpURLConnection fallback.
      */
     suspend fun downloadApk(
         context: Context,
         release: GitHubReleaseInfo,
         onProgress: (progressPercent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
-        val updatesDir = File(context.externalCacheDir ?: context.cacheDir, "updates").apply {
-            if (!exists()) mkdirs()
-            // Clean up older downloaded APKs
-            listFiles()?.forEach { file ->
-                if (file.isFile && file.name.endsWith(".apk", ignoreCase = true)) {
-                    file.delete()
-                }
+        val updatesDir = resolveUpdatesDir(context)
+        val safeFileName = release.apkAssetName
+            .ifBlank { "DNS-Pulse-update.apk" }
+            .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            .let { if (it.endsWith(".apk", ignoreCase = true)) it else "$it.apk" }
+        val targetFile = File(updatesDir, safeFileName)
+        val partFile = File(updatesDir, "$safeFileName.part")
+
+        var lastError: Exception? = null
+        val urlsToTry = buildCandidateUrls(release)
+
+        for (url in urlsToTry) {
+            currentCoroutineContext().ensureActive()
+
+            // Attempt 1: OkHttp HTTP/1.1 streaming download
+            try {
+                downloadWithOkHttp(
+                    url = url,
+                    fallbackTotalBytes = release.apkSizeBytes,
+                    partFile = partFile,
+                    onProgress = onProgress
+                )
+                return@withContext finalizeDownloadedApk(partFile, targetFile, onProgress)
+            } catch (e: CancellationException) {
+                partFile.delete()
+                throw e
+            } catch (e: Exception) {
+                partFile.delete()
+                currentCoroutineContext().ensureActive()
+                lastError = e
+            }
+
+            // Attempt 2: HttpURLConnection fallback with manual redirect following
+            try {
+                downloadWithHttpUrlConnection(
+                    initialUrl = url,
+                    fallbackTotalBytes = release.apkSizeBytes,
+                    partFile = partFile,
+                    onProgress = onProgress
+                )
+                return@withContext finalizeDownloadedApk(partFile, targetFile, onProgress)
+            } catch (e: CancellationException) {
+                partFile.delete()
+                throw e
+            } catch (e: Exception) {
+                partFile.delete()
+                currentCoroutineContext().ensureActive()
+                lastError = e
             }
         }
 
-        val safeFileName = release.apkAssetName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-        val targetFile = File(updatesDir, safeFileName)
+        val friendlyMessage = when (lastError) {
+            is UnknownHostException -> "تعذر الاتصال بالخادم. تحقق من اتصال الإنترنت أو الـ DNS."
+            is SocketTimeoutException -> "انتهت مهلة الاتصال أثناء تحميل التحديث. حاول مجدداً."
+            is ConnectException -> "تعذر الوصول إلى خوادم التحميل."
+            else -> lastError?.localizedMessage?.takeIf { it.isNotBlank() }
+                ?: "فشل تحميل ملف التحديث."
+        }
+        Result.failure(IOException(friendlyMessage, lastError))
+    }
 
+    private fun resolveUpdatesDir(context: Context): File {
+        val preferred = File(context.cacheDir, "updates")
+        if ((preferred.exists() || preferred.mkdirs()) && preferred.canWrite()) {
+            cleanOldUpdateFiles(preferred)
+            return preferred
+        }
+        val fallback = File(context.externalCacheDir ?: context.cacheDir, "updates")
+        if (!fallback.exists()) fallback.mkdirs()
+        cleanOldUpdateFiles(fallback)
+        return fallback
+    }
+
+    private fun cleanOldUpdateFiles(dir: File) {
+        dir.listFiles()?.forEach { file ->
+            if (file.isFile && (file.name.endsWith(".apk", ignoreCase = true) || file.name.endsWith(".part", ignoreCase = true))) {
+                file.delete()
+            }
+        }
+    }
+
+    private fun buildCandidateUrls(release: GitHubReleaseInfo): List<String> {
+        val primary = release.apkDownloadUrl.trim()
+        val list = mutableListOf<String>()
+        if (primary.isNotBlank()) list.add(primary)
+        // If asset came from GitHub releases/download with unencoded spaces, add encoded form as backup
+        if (primary.contains(" ")) {
+            list.add(primary.replace(" ", "%20"))
+        }
+        return list.distinct()
+    }
+
+    private suspend fun downloadWithOkHttp(
+        url: String,
+        fallbackTotalBytes: Long,
+        partFile: File,
+        onProgress: (progressPercent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit
+    ) {
         val request = Request.Builder()
-            .url(release.apkDownloadUrl)
+            .url(url)
+            .cacheControl(CacheControl.FORCE_NETWORK)
             .header("User-Agent", "DNSPulse-Android")
+            .header("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
+            .header("Accept-Encoding", "identity")
             .get()
             .build()
 
+        val call = downloadClient.newCall(request)
+        val jobHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
+            call.cancel()
+        }
+
         try {
-            client.newCall(request).execute().use { response ->
+            call.execute().use { response ->
                 if (!response.isSuccessful) {
-                    return@withContext Result.failure(
-                        IOException("Download failed with HTTP ${response.code}")
-                    )
+                    throw IOException("HTTP ${response.code}")
                 }
-
-                val body = response.body
-                    ?: return@withContext Result.failure(IOException("Empty download response"))
-
-                val contentLength = body.contentLength().takeIf { it > 0 } ?: release.apkSizeBytes
-                var downloaded = 0L
-                var lastReportedPercent = -1
+                val contentType = response.header("Content-Type").orEmpty()
+                if (contentType.startsWith("text/html", ignoreCase = true)) {
+                    throw IOException("Server returned HTML instead of APK package")
+                }
+                val body = response.body ?: throw IOException("Empty response body")
+                val totalBytes = body.contentLength().takeIf { it > 0L } ?: fallbackTotalBytes
 
                 body.byteStream().use { input ->
-                    FileOutputStream(targetFile).use { output ->
-                        val buffer = ByteArray(8 * 1024)
-                        var bytesRead: Int
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                            downloaded += bytesRead
-
-                            val percent = if (contentLength > 0) {
-                                ((downloaded * 100L) / contentLength).toInt().coerceIn(0, 100)
-                            } else {
-                                -1
-                            }
-
-                            if (percent != lastReportedPercent) {
-                                lastReportedPercent = percent
-                                onProgress(percent, downloaded, contentLength)
-                            }
-                        }
-                        output.flush()
-                    }
+                    copyStreamWithProgress(
+                        input = input,
+                        partFile = partFile,
+                        totalBytes = totalBytes,
+                        onProgress = onProgress
+                    )
                 }
-
-                if (!targetFile.exists() || targetFile.length() == 0L) {
-                    return@withContext Result.failure(IOException("Downloaded APK file is empty"))
-                }
-
-                if (!isZipApkHeader(targetFile)) {
-                    targetFile.delete()
-                    return@withContext Result.failure(IOException("Downloaded file is not a valid APK package"))
-                }
-
-                onProgress(100, targetFile.length(), targetFile.length())
-                Result.success(targetFile)
             }
-        } catch (e: Exception) {
-            if (targetFile.exists()) targetFile.delete()
-            Result.failure(e)
+        } finally {
+            jobHandle?.dispose()
         }
+    }
+
+    private suspend fun downloadWithHttpUrlConnection(
+        initialUrl: String,
+        fallbackTotalBytes: Long,
+        partFile: File,
+        onProgress: (progressPercent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit
+    ) {
+        var currentUrl = initialUrl
+        var redirects = 0
+        var connection: HttpURLConnection? = null
+
+        val jobHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
+            try {
+                connection?.disconnect()
+            } catch (_: Exception) {
+            }
+        }
+
+        try {
+            while (redirects < 8) {
+                currentCoroutineContext().ensureActive()
+                val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
+                    connectTimeout = 20_000
+                    readTimeout = 45_000
+                    requestMethod = "GET"
+                    useCaches = false
+                    setRequestProperty("User-Agent", "DNSPulse-Android")
+                    setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
+                    setRequestProperty("Accept-Encoding", "identity")
+                }
+                connection = conn
+                val code = conn.responseCode
+
+                if (code in 300..399) {
+                    val location = conn.getHeaderField("Location")?.trim()
+                    conn.disconnect()
+                    if (location.isNullOrBlank()) {
+                        throw IOException("Redirect without location (HTTP $code)")
+                    }
+                    currentUrl = URL(URL(currentUrl), location).toString()
+                    redirects++
+                    continue
+                }
+
+                if (code !in 200..299) {
+                    conn.disconnect()
+                    throw IOException("HTTP $code")
+                }
+
+                val contentType = conn.contentType.orEmpty()
+                if (contentType.startsWith("text/html", ignoreCase = true)) {
+                    conn.disconnect()
+                    throw IOException("Server returned HTML instead of APK package")
+                }
+
+                val headerLength = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    conn.contentLengthLong
+                } else {
+                    conn.contentLength.toLong()
+                }
+                val totalBytes = headerLength.takeIf { it > 0L } ?: fallbackTotalBytes
+
+                conn.inputStream.use { input ->
+                    copyStreamWithProgress(
+                        input = input,
+                        partFile = partFile,
+                        totalBytes = totalBytes,
+                        onProgress = onProgress
+                    )
+                }
+                return
+            }
+            throw IOException("Too many redirects while downloading update")
+        } finally {
+            jobHandle?.dispose()
+            try {
+                connection?.disconnect()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private suspend fun copyStreamWithProgress(
+        input: InputStream,
+        partFile: File,
+        totalBytes: Long,
+        onProgress: (progressPercent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit
+    ) {
+        var downloaded = 0L
+        var lastReportedPercent = Int.MIN_VALUE
+        var lastReportedBytes = -1L
+        var lastReportTimeMs = 0L
+
+        // Emit immediate initial state so UI stops showing "connecting" right when stream opens
+        onProgress(if (totalBytes > 0L) 0 else -1, 0L, totalBytes)
+
+        FileOutputStream(partFile).use { output ->
+            val buffer = ByteArray(32 * 1024)
+            var bytesRead: Int
+            while (input.read(buffer).also { bytesRead = it } != -1) {
+                currentCoroutineContext().ensureActive()
+                output.write(buffer, 0, bytesRead)
+                downloaded += bytesRead
+
+                val percent = if (totalBytes > 0L) {
+                    ((downloaded * 100L) / totalBytes).toInt().coerceIn(0, 100)
+                } else {
+                    -1
+                }
+                val now = System.currentTimeMillis()
+                val shouldReport = (percent >= 0 && percent != lastReportedPercent) ||
+                    (now - lastReportTimeMs >= 120L) ||
+                    (downloaded - lastReportedBytes >= 64 * 1024L)
+
+                if (shouldReport) {
+                    lastReportedPercent = percent
+                    lastReportedBytes = downloaded
+                    lastReportTimeMs = now
+                    onProgress(percent, downloaded, totalBytes)
+                }
+            }
+            try {
+                output.fd.sync()
+            } catch (_: Exception) {
+            }
+            output.flush()
+        }
+    }
+
+    private fun finalizeDownloadedApk(
+        partFile: File,
+        targetFile: File,
+        onProgress: (progressPercent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit
+    ): Result<File> {
+        if (!partFile.exists() || partFile.length() == 0L) {
+            partFile.delete()
+            return Result.failure(IOException("Downloaded APK file is empty"))
+        }
+
+        if (!isZipApkHeader(partFile)) {
+            partFile.delete()
+            return Result.failure(IOException("Downloaded file is not a valid APK package"))
+        }
+
+        if (targetFile.exists()) targetFile.delete()
+        if (!partFile.renameTo(targetFile)) {
+            partFile.copyTo(targetFile, overwrite = true)
+            partFile.delete()
+        }
+
+        val finalSize = targetFile.length()
+        onProgress(100, finalSize, finalSize)
+        return Result.success(targetFile)
     }
 
     sealed interface ApkCompatibilityResult {

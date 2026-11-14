@@ -69,7 +69,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.DnsEngineMode
-import com.example.service.ShizukuStatus
 import com.example.ui.components.DnsServerCard
 import com.example.ui.components.ExpertModeBottomSheet
 import com.example.ui.components.GlassCard
@@ -194,47 +193,12 @@ fun HomeScreen(
                     }
                 }
 
-                val isElevated = uiState.privateDnsState.hasWriteSecureSettings ||
-                    uiState.shizukuStatus == ShizukuStatus.AUTHORIZED
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(
-                            if (isElevated) EmeraldMint.copy(alpha = 0.14f)
-                            else GlassSurface
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = if (isElevated) EmeraldMint.copy(alpha = 0.4f) else GlassBorder,
-                            shape = RoundedCornerShape(50)
-                        )
-                        .clickable { showExpertSheet = true }
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                        .testTag("shizuku_status_badge"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .alpha(if (isElevated) liveDotPulse else 0.7f)
-                                .clip(CircleShape)
-                                .background(if (isElevated) EmeraldMint else TextSecondary)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = when {
-                                uiState.shizukuStatus == ShizukuStatus.AUTHORIZED -> "SHIZUKU ACTIVE"
-                                uiState.privateDnsState.hasWriteSecureSettings -> "1-TAP READY"
-                                else -> "EXPERT MODE"
-                            },
-                            color = if (isElevated) EmeraldMint else TextSecondary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.6.sp
-                        )
+                UiModeHeaderSwitcher(
+                    isSimpleMode = uiState.simpleMode,
+                    onSelectSimpleMode = { enabled ->
+                        viewModel.setSimpleMode(enabled)
                     }
-                }
+                )
             }
         }
 
@@ -586,6 +550,123 @@ private fun EngineSegmentedSlider(
                         color = if (selectedIndex == 1) TextPrimary else TextSecondary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UiModeHeaderSwitcher(
+    isSimpleMode: Boolean,
+    onSelectSimpleMode: (Boolean) -> Unit
+) {
+    val selectedIndex = if (isSimpleMode) 0 else 1
+    Box(
+        modifier = Modifier
+            .height(48.dp)
+            .testTag("ui_mode_header_switcher"),
+        contentAlignment = Alignment.Center
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .width(126.dp)
+                .height(34.dp)
+                .clip(RoundedCornerShape(50))
+                .background(GlassSurface)
+                .border(
+                    width = 1.dp,
+                    color = if (isSimpleMode) EmeraldMint.copy(alpha = 0.42f) else ElectricCyan.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(50)
+                )
+                .padding(3.dp)
+        ) {
+            val pillWidth = maxWidth / 2
+            val indicatorOffset = if (isSimpleMode) {
+                0.dp
+            } else {
+                val animatedOffset by animateDpAsState(
+                    targetValue = pillWidth * selectedIndex,
+                    animationSpec = spring(
+                        dampingRatio = 0.82f,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    label = "header_mode_offset"
+                )
+                animatedOffset
+            }
+
+            Box(
+                modifier = Modifier
+                    .offset(x = indicatorOffset)
+                    .width(pillWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = if (isSimpleMode) {
+                                listOf(
+                                    EmeraldMint.copy(alpha = 0.24f),
+                                    EmeraldMint.copy(alpha = 0.14f)
+                                )
+                            } else {
+                                listOf(
+                                    ElectricCyan.copy(alpha = 0.28f),
+                                    EmeraldMint.copy(alpha = 0.18f)
+                                )
+                            }
+                        )
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (isSimpleMode) EmeraldMint.copy(alpha = 0.55f) else ElectricCyan.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(50)
+                    )
+            )
+
+            Row(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(50))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(bounded = true, color = EmeraldMint),
+                            onClick = { onSelectSimpleMode(true) }
+                        )
+                        .testTag("mode_simple_btn"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Simple",
+                        color = if (isSimpleMode) TextPrimary else TextSecondary,
+                        fontSize = 10.5.sp,
+                        fontWeight = if (isSimpleMode) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(50))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(bounded = true, color = ElectricCyan),
+                            onClick = { onSelectSimpleMode(false) }
+                        )
+                        .testTag("mode_pro_btn"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Pro",
+                        color = if (!isSimpleMode) TextPrimary else TextSecondary,
+                        fontSize = 10.5.sp,
+                        fontWeight = if (!isSimpleMode) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1
                     )
                 }
             }

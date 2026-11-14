@@ -11,7 +11,10 @@
     <string name="update_title_checking">جاري التحقق من التحديثات</string>
     <string name="update_subtitle_checking">يتم الاتصال بـ GitHub</string>
     <string name="update_title_error">تعذر التحقق من التحديث</string>
+    <string name="update_title_download_error">تعذر تحميل التحديث</string>
     <string name="update_retry_button">إعادة المحاولة</string>
+    <string name="update_cancel_download">إلغاء التحميل</string>
+    <string name="update_connecting">جاري الاتصال بالخادم...</string>
     <string name="dev_info_title">Developer: Pulse Tech By Charfeddine Ka</string>
     <string name="dev_info_version_label">Version n°</string>
     <string name="dev_info_build_label">Build °</string>

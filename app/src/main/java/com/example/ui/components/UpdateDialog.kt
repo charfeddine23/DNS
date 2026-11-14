@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -37,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -98,16 +100,16 @@ fun UpdateDialog(
     onRetryCheck: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val canDismiss = updateState !is UpdateDownloadState.Downloading
+    val isDownloading = updateState is UpdateDownloadState.Downloading
 
     Dialog(
         onDismissRequest = {
-            if (canDismiss) onDismiss()
+            if (!isDownloading) onDismiss()
         },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = canDismiss,
-            dismissOnClickOutside = canDismiss
+            dismissOnBackPress = true,
+            dismissOnClickOutside = !isDownloading
         )
     ) {
         val cardShape = RoundedCornerShape(28.dp)
@@ -177,35 +179,31 @@ fun UpdateDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (canDismiss) {
-                                    IconButton(
-                                        onClick = onDismiss,
+                                IconButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("update_later_btn")
+                                ) {
+                                    Box(
                                         modifier = Modifier
-                                            .size(48.dp)
-                                            .testTag("update_later_btn")
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.White.copy(alpha = 0.06f))
+                                            .border(
+                                                width = 1.dp,
+                                                color = Color.White.copy(alpha = 0.09f),
+                                                shape = CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(34.dp)
-                                                .clip(CircleShape)
-                                                .background(Color.White.copy(alpha = 0.06f))
-                                                .border(
-                                                    width = 1.dp,
-                                                    color = Color.White.copy(alpha = 0.09f),
-                                                    shape = CircleShape
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = stringResource(R.string.update_close_desc),
-                                                tint = UpdateCloseGray,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = stringResource(R.string.update_close_desc),
+                                            tint = UpdateCloseGray,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
-                                } else {
-                                    Spacer(modifier = Modifier.size(48.dp))
                                 }
 
                                 if (!releaseTag.isNullOrBlank()) {
@@ -355,6 +353,22 @@ fun UpdateDialog(
 
                                     is UpdateDownloadState.Downloading -> {
                                         val release = updateState.release
+                                        val isConnecting = updateState.downloadedBytes <= 0L
+                                        val hasTotalSize = updateState.totalBytes > 0L && updateState.progressPercent >= 0
+                                        val targetProgress = if (hasTotalSize) {
+                                            (updateState.progressPercent.coerceIn(0, 100)) / 100f
+                                        } else {
+                                            0f
+                                        }
+                                        val animatedProgress by animateFloatAsState(
+                                            targetValue = targetProgress,
+                                            animationSpec = tween(
+                                                durationMillis = if (simpleMode) 0 else 180,
+                                                easing = FastOutSlowInEasing
+                                            ),
+                                            label = "update_download_progress"
+                                        )
+
                                         Text(
                                             text = stringResource(R.string.update_title_downloading),
                                             color = TextPrimary,
@@ -376,9 +390,9 @@ fun UpdateDialog(
 
                                         Spacer(modifier = Modifier.height(20.dp))
 
-                                        if (updateState.progressPercent >= 0) {
+                                        if (hasTotalSize && !isConnecting) {
                                             LinearProgressIndicator(
-                                                progress = { updateState.progressPercent / 100f },
+                                                progress = { animatedProgress },
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .height(8.dp)
@@ -387,23 +401,31 @@ fun UpdateDialog(
                                                 trackColor = UpdateHaloOuter
                                             )
                                             Spacer(modifier = Modifier.height(10.dp))
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Text(
-                                                    text = "${updateState.progressPercent}%",
-                                                    color = UpdateCrimsonText,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontFamily = FontFamily.Monospace
-                                                )
-                                                Text(
-                                                    text = "${formatBytes(updateState.downloadedBytes)} / ${formatBytes(updateState.totalBytes)}",
-                                                    color = TextSecondary,
-                                                    fontSize = 12.sp,
-                                                    fontFamily = FontFamily.Monospace
-                                                )
+                                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    val speedText = formatSpeed(updateState.speedBytesPerSec)
+                                                    Text(
+                                                        text = if (speedText.isNotEmpty()) {
+                                                            "${updateState.progressPercent}% • $speedText"
+                                                        } else {
+                                                            "${updateState.progressPercent}%"
+                                                        },
+                                                        color = UpdateCrimsonText,
+                                                        fontSize = 12.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontFamily = FontFamily.Monospace
+                                                    )
+                                                    Text(
+                                                        text = "${formatBytes(updateState.downloadedBytes)} / ${formatBytes(updateState.totalBytes)}",
+                                                        color = TextSecondary,
+                                                        fontSize = 12.sp,
+                                                        fontFamily = FontFamily.Monospace
+                                                    )
+                                                }
                                             }
                                         } else {
                                             LinearProgressIndicator(
@@ -415,14 +437,40 @@ fun UpdateDialog(
                                                 trackColor = UpdateHaloOuter
                                             )
                                             Spacer(modifier = Modifier.height(10.dp))
+                                            if (isConnecting) {
+                                                Text(
+                                                    text = stringResource(R.string.update_connecting),
+                                                    color = TextSecondary,
+                                                    fontSize = 12.5.sp,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            } else {
+                                                val speedText = formatSpeed(updateState.speedBytesPerSec)
+                                                Text(
+                                                    text = if (speedText.isNotEmpty()) {
+                                                        "${formatBytes(updateState.downloadedBytes)} • $speedText"
+                                                    } else {
+                                                        formatBytes(updateState.downloadedBytes)
+                                                    },
+                                                    color = TextSecondary,
+                                                    fontSize = 12.sp,
+                                                    fontFamily = FontFamily.Monospace
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        TextButton(
+                                            onClick = onDismiss,
+                                            modifier = Modifier.testTag("update_cancel_btn")
+                                        ) {
                                             Text(
-                                                text = formatBytes(updateState.downloadedBytes),
+                                                text = stringResource(R.string.update_cancel_download),
                                                 color = TextSecondary,
-                                                fontSize = 12.sp,
-                                                fontFamily = FontFamily.Monospace
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium
                                             )
                                         }
-                                        Spacer(modifier = Modifier.height(6.dp))
                                     }
 
                                     is UpdateDownloadState.ReadyToInstall -> {
@@ -454,7 +502,13 @@ fun UpdateDialog(
 
                                     is UpdateDownloadState.Error -> {
                                         Text(
-                                            text = stringResource(R.string.update_title_error),
+                                            text = stringResource(
+                                                if (updateState.release != null) {
+                                                    R.string.update_title_download_error
+                                                } else {
+                                                    R.string.update_title_error
+                                                }
+                                            ),
                                             color = TextPrimary,
                                             fontSize = 20.sp,
                                             fontWeight = FontWeight.Bold,
@@ -733,5 +787,21 @@ private fun UpdateRocketEmblem(isAnimating: Boolean) {
 private fun formatBytes(bytes: Long): String {
     if (bytes <= 0L) return "0 MB"
     val mb = bytes / (1024.0 * 1024.0)
-    return String.format(Locale.US, "%.1f MB", mb)
+    return if (mb >= 0.1) {
+        String.format(Locale.US, "%.1f MB", mb)
+    } else {
+        val kb = bytes / 1024.0
+        String.format(Locale.US, "%.0f KB", kb.coerceAtLeast(1.0))
+    }
+}
+
+private fun formatSpeed(bytesPerSec: Long): String {
+    if (bytesPerSec <= 0L) return ""
+    val mbPerSec = bytesPerSec / (1024.0 * 1024.0)
+    return if (mbPerSec >= 1.0) {
+        String.format(Locale.US, "%.1f MB/s", mbPerSec)
+    } else {
+        val kbPerSec = bytesPerSec / 1024.0
+        String.format(Locale.US, "%.0f KB/s", kbPerSec.coerceAtLeast(1.0))
+    }
 }

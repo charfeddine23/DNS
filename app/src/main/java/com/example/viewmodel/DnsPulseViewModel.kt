@@ -24,6 +24,7 @@ import com.example.utils.PrivateDnsState
 import com.example.utils.UpdateCheckResult
 import com.example.utils.UpdateDownloadState
 import com.example.utils.UpdateManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -31,6 +32,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class HomeUiState(
@@ -64,6 +66,7 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var updateCheckJob: Job? = null
+    private var apkDownloadJob: Job? = null
     private var lastAutoCheckAtMs: Long = 0L
 
     init {
@@ -232,9 +235,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
                         primaryIpv6 = server.primaryIpv6,
                         secondaryIpv6 = server.secondaryIpv6
                     )
-                    _uiState.value = _uiState.value.copy(
-                        userMessage = "Activated ${server.name} via Local VPN"
-                    )
                 }
             } else if (server.dotHostname.isNotBlank()) {
                 val matchingPreset = _uiState.value.privatePresets.firstOrNull {
@@ -248,10 +248,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
                     isAdGuardShield = server.dotHostname.equals("dns.adguard.com", ignoreCase = true)
                 )
                 activatePrivateDnsPreset(matchingPreset, onPrivateDnsFallback)
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    userMessage = "Selected ${server.name} (${server.primaryIpv4}) for Local VPN"
-                )
             }
         }
     }
@@ -269,9 +265,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
             val directSuccess = PrivateDnsController.setPrivateDnsDirectly(context, preset.hostname)
             if (directSuccess) {
                 refreshSystemPrivateDnsState()
-                _uiState.value = _uiState.value.copy(
-                    userMessage = "Private DNS switched to ${preset.name} (${preset.hostname})"
-                )
                 measureActivePing(preset.hostname)
                 return@launch
             }
@@ -281,9 +274,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
                 val shizukuResult = shizukuBridge.setPrivateDns(preset.hostname)
                 if (shizukuResult.success) {
                     refreshSystemPrivateDnsState()
-                    _uiState.value = _uiState.value.copy(
-                        userMessage = "Shizuku bridged Private DNS to ${preset.name} (${preset.hostname})"
-                    )
                     measureActivePing(preset.hostname)
                     return@launch
                 }
@@ -301,7 +291,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
             val directSuccess = PrivateDnsController.disablePrivateDnsDirectly(context)
             if (directSuccess) {
                 refreshSystemPrivateDnsState()
-                _uiState.value = _uiState.value.copy(userMessage = "Private DNS disabled (Set to standard)")
                 return@launch
             }
 
@@ -310,7 +299,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
                 val shizukuResult = shizukuBridge.disablePrivateDns()
                 if (shizukuResult.success) {
                     refreshSystemPrivateDnsState()
-                    _uiState.value = _uiState.value.copy(userMessage = "Shizuku disabled Private DNS")
                     return@launch
                 }
             }
@@ -325,7 +313,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
             val res = shizukuBridge.grantWriteSecureSettingsViaShizuku()
             if (res.success) {
                 refreshSystemPrivateDnsState()
-                _uiState.value = _uiState.value.copy(userMessage = "Granted WRITE_SECURE_SETTINGS via Shizuku!")
             } else {
                 _uiState.value = _uiState.value.copy(userMessage = "Shizuku error: ${res.error}")
             }
@@ -352,9 +339,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
             primaryIpv6 = server.primaryIpv6,
             secondaryIpv6 = server.secondaryIpv6
         )
-        _uiState.value = _uiState.value.copy(
-            userMessage = "Connecting to ${server.name} via local VPN..."
-        )
         measureActivePing(server.primaryIpv4)
     }
 
@@ -362,8 +346,7 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         DnsVpnService.stopVpn(context)
         _uiState.value = _uiState.value.copy(
             isVpnActive = false,
-            activeVpnServerName = "Disconnected",
-            userMessage = "Local DNS VPN Disconnected"
+            activeVpnServerName = "Disconnected"
         )
     }
 
@@ -399,9 +382,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
                 .minByOrNull { it.latencyMs ?: Long.MAX_VALUE }
             if (fastest != null) {
                 selectVpnServer(fastest.id)
-                _uiState.value = _uiState.value.copy(
-                    userMessage = "Auto-selected fastest DNS: ${fastest.name} (${fastest.latencyMs}ms)"
-                )
             } else {
                 pingAllServers()
             }
@@ -430,8 +410,7 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         list.add(0, newProfile)
         _uiState.value = _uiState.value.copy(
             vpnServers = list,
-            selectedVpnServerId = newProfile.id,
-            userMessage = "Added custom server: ${newProfile.name}"
+            selectedVpnServerId = newProfile.id
         )
         viewModelScope.launch {
             val ping = LatencyTester.pingDnsServer(newProfile.primaryIpv4)
@@ -502,52 +481,92 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
 
     fun startApkDownload(release: GitHubReleaseInfo) {
         val context = getApplication<Application>()
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                updateState = UpdateDownloadState.Downloading(
-                    release = release,
-                    progressPercent = 0,
-                    downloadedBytes = 0L,
-                    totalBytes = release.apkSizeBytes
-                )
-            )
-
-            val downloadResult = UpdateManager.downloadApk(context, release) { percent, downloaded, total ->
-                _uiState.value = _uiState.value.copy(
+        apkDownloadJob?.cancel()
+        apkDownloadJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
                     updateState = UpdateDownloadState.Downloading(
                         release = release,
-                        progressPercent = percent,
-                        downloadedBytes = downloaded,
-                        totalBytes = total
+                        progressPercent = 0,
+                        downloadedBytes = 0L,
+                        totalBytes = release.apkSizeBytes,
+                        speedBytesPerSec = 0L
                     )
                 )
             }
 
-            downloadResult
-                .onSuccess { apkFile ->
-                    _uiState.value = _uiState.value.copy(
-                        updateState = UpdateDownloadState.ReadyToInstall(apkFile, release)
-                    )
+            var speedWindowStartMs = System.currentTimeMillis()
+            var speedWindowStartBytes = 0L
+            var smoothedSpeedBytesPerSec = 0L
+
+            try {
+                val downloadResult = UpdateManager.downloadApk(context, release) { percent, downloaded, total ->
+                    val now = System.currentTimeMillis()
+                    val elapsedMs = now - speedWindowStartMs
+                    if (elapsedMs >= 450L && downloaded >= speedWindowStartBytes) {
+                        val instantSpeed = ((downloaded - speedWindowStartBytes) * 1000L) / elapsedMs.coerceAtLeast(1L)
+                        smoothedSpeedBytesPerSec = if (smoothedSpeedBytesPerSec == 0L) {
+                            instantSpeed
+                        } else {
+                            (smoothedSpeedBytesPerSec * 3L + instantSpeed) / 4L
+                        }
+                        speedWindowStartMs = now
+                        speedWindowStartBytes = downloaded
+                    }
+                    _uiState.update { state ->
+                        if (state.updateState is UpdateDownloadState.Downloading) {
+                            state.copy(
+                                updateState = UpdateDownloadState.Downloading(
+                                    release = release,
+                                    progressPercent = percent,
+                                    downloadedBytes = downloaded,
+                                    totalBytes = total,
+                                    speedBytesPerSec = smoothedSpeedBytesPerSec
+                                )
+                            )
+                        } else {
+                            state
+                        }
+                    }
                 }
-                .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(
-                        updateState = UpdateDownloadState.Error(
-                            message = error.localizedMessage ?: "Failed to download APK",
-                            release = release
-                        )
-                    )
-                }
+
+                downloadResult
+                    .onSuccess { apkFile ->
+                        _uiState.update {
+                            it.copy(
+                                updateState = UpdateDownloadState.ReadyToInstall(apkFile, release)
+                            )
+                        }
+                    }
+                    .onFailure { error ->
+                        _uiState.update {
+                            it.copy(
+                                updateState = UpdateDownloadState.Error(
+                                    message = error.localizedMessage ?: "تعذر تحميل ملف التحديث",
+                                    release = release
+                                )
+                            )
+                        }
+                    }
+            } catch (_: CancellationException) {
+                // Download was intentionally cancelled or replaced by a retry
+            }
         }
     }
 
     fun dismissUpdateDialog() {
-        _uiState.value = _uiState.value.copy(
-            showUpdateDialog = false,
-            updateState = if (_uiState.value.updateState is UpdateDownloadState.Available ||
-                _uiState.value.updateState is UpdateDownloadState.Error ||
-                _uiState.value.updateState is UpdateDownloadState.Checking
-            ) UpdateDownloadState.Idle else _uiState.value.updateState
-        )
+        apkDownloadJob?.cancel()
+        apkDownloadJob = null
+        _uiState.update { state ->
+            state.copy(
+                showUpdateDialog = false,
+                updateState = if (state.updateState is UpdateDownloadState.Available ||
+                    state.updateState is UpdateDownloadState.Downloading ||
+                    state.updateState is UpdateDownloadState.Error ||
+                    state.updateState is UpdateDownloadState.Checking
+                ) UpdateDownloadState.Idle else state.updateState
+            )
+        }
     }
 
     override fun onCleared() {

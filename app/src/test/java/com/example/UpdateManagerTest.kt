@@ -176,4 +176,105 @@ class UpdateManagerTest {
             htmlFile.delete()
         }
     }
+
+    @Test
+    fun `downloadApk succeeds across redirect and reports progress even without Content-Length`(): Unit = kotlinx.coroutines.runBlocking {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val payload = ByteArray(150 * 1024) { index ->
+            when (index) {
+                0 -> 0x50 // 'P'
+                1 -> 0x4B // 'K'
+                2 -> 0x03
+                3 -> 0x04
+                else -> (index % 251).toByte()
+            }
+        }
+
+        java.net.ServerSocket(0).use { server ->
+            val port = server.localPort
+            val serverThread = Thread {
+                // Handle redirect request
+                server.accept().use { sock ->
+                    val reader = sock.getInputStream().bufferedReader()
+                    while (!reader.readLine().isNullOrEmpty()) { /* drain headers */ }
+                    val redirectHeaders = "HTTP/1.1 302 Found\r\nLocation: /cdn/app.apk\r\nConnection: close\r\n\r\n"
+                    sock.getOutputStream().write(redirectHeaders.toByteArray())
+                    sock.getOutputStream().flush()
+                }
+                // Handle actual APK stream WITHOUT Content-Length (tests anti-freeze progress reporting)
+                server.accept().use { sock ->
+                    val reader = sock.getInputStream().bufferedReader()
+                    while (!reader.readLine().isNullOrEmpty()) { /* drain headers */ }
+                    val okHeaders = "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.android.package-archive\r\nConnection: close\r\n\r\n"
+                    sock.getOutputStream().write(okHeaders.toByteArray())
+                    sock.getOutputStream().write(payload)
+                    sock.getOutputStream().flush()
+                }
+            }.apply { start() }
+
+            val release = com.example.utils.GitHubReleaseInfo(
+                tagName = "v1.0.99",
+                normalizedVersion = "1.0.99",
+                releaseNotes = "Test",
+                apkAssetName = "DNS.Pulse.v1.0.99.apk",
+                apkDownloadUrl = "http://127.0.0.1:$port/download/app.apk",
+                apkSizeBytes = 0L
+            )
+
+            val progressEvents = mutableListOf<Triple<Int, Long, Long>>()
+            val result = UpdateManager.downloadApk(context, release) { pct, downloaded, total ->
+                progressEvents.add(Triple(pct, downloaded, total))
+            }
+
+            serverThread.join(5000)
+
+            assertTrue("Expected download success, got: ${result.exceptionOrNull()}", result.isSuccess)
+            val file = result.getOrThrow()
+            assertTrue(file.exists())
+            assertEquals(payload.size.toLong(), file.length())
+            assertTrue("Expected multiple progress callbacks even when Content-Length is missing", progressEvents.size >= 3)
+            assertEquals(100, progressEvents.last().first)
+            file.delete()
+        }
+        Unit
+    }
+
+    @Test
+    fun `downloadApk rejects html error responses cleanly`(): Unit = kotlinx.coroutines.runBlocking {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+
+        java.net.ServerSocket(0).use { server ->
+            val port = server.localPort
+            val serverThread = Thread {
+                repeat(2) {
+                    runCatching {
+                        server.accept().use { sock ->
+                            val reader = sock.getInputStream().bufferedReader()
+                            while (!reader.readLine().isNullOrEmpty()) { /* drain */ }
+                            val body = "<html><body>Rate limited</body></html>".toByteArray()
+                            val headers = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                            sock.getOutputStream().write(headers.toByteArray())
+                            sock.getOutputStream().write(body)
+                            sock.getOutputStream().flush()
+                        }
+                    }
+                }
+            }.apply { start() }
+
+            val release = com.example.utils.GitHubReleaseInfo(
+                tagName = "v1.0.99",
+                normalizedVersion = "1.0.99",
+                releaseNotes = "Test",
+                apkAssetName = "DNS.Pulse.v1.0.99.apk",
+                apkDownloadUrl = "http://127.0.0.1:$port/bad.apk",
+                apkSizeBytes = 0L
+            )
+
+            val result = UpdateManager.downloadApk(context, release) { _, _, _ -> }
+            serverThread.join(5000)
+
+            assertTrue(result.isFailure)
+        }
+        Unit
+    }
 }
