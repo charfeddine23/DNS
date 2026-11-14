@@ -1,15 +1,25 @@
 package com.example.ui.screens
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.PowerManager
 import android.provider.Settings
-import android.widget.Toast
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,19 +37,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,27 +55,40 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
-import com.example.ui.components.ExpertModeBottomSheet
+import com.example.R
 import com.example.ui.components.GlassCard
 import com.example.ui.components.MultiThemeEngineSheet
 import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.GlassSurfaceVariant
+import com.example.ui.theme.HoloMagenta
+import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-import com.example.utils.PrivateDnsController
 import com.example.viewmodel.DnsPulseViewModel
 import com.example.viewmodel.HomeUiState
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun SettingsScreen(
@@ -78,14 +98,11 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showExpertGuide by remember { mutableStateOf(false) }
     var showThemeSheet by remember { mutableStateOf(false) }
     val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
     val isBatteryUnrestricted = remember(context) {
         powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
     }
-
-    val adbCmd = PrivateDnsController.getAdbCommand(context)
 
     Column(
         modifier = modifier
@@ -103,7 +120,7 @@ fun SettingsScreen(
             fontWeight = FontWeight.ExtraBold
         )
         Text(
-            text = "Configure engine behaviors, living aura, and access permissions",
+            text = "Configure themes, living aura, and background protection",
             color = TextSecondary,
             fontSize = 12.sp
         )
@@ -151,104 +168,6 @@ fun SettingsScreen(
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Shizuku / ADB Helper Card
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            breathingGlow = PrivateDnsController.hasWriteSecureSettingsPermission(context)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(EmeraldMint.copy(alpha = 0.15f), CircleShape)
-                                .border(1.dp, EmeraldMint.copy(alpha = 0.35f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Security,
-                                contentDescription = "1-Tap Mode",
-                                tint = EmeraldMint,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "1-Tap Mode (WRITE_SECURE_SETTINGS)",
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = if (PrivateDnsController.hasWriteSecureSettingsPermission(context))
-                                    "Status: Unlocked & Active"
-                                else "Status: Standard Mode",
-                                color = if (PrivateDnsController.hasWriteSecureSettingsPermission(context))
-                                    EmeraldMint
-                                else TextSecondary,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = { showExpertGuide = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ElectricCyan.copy(alpha = 0.15f),
-                            contentColor = ElectricCyan
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.testTag("open_expert_guide_btn")
-                    ) {
-                        Text("Guide", fontSize = 11.sp)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(GlassSurfaceVariant)
-                        .border(1.dp, GlassBorder, RoundedCornerShape(10.dp))
-                        .padding(10.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = adbCmd,
-                            color = TextSecondary,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                cm.setPrimaryClip(ClipData.newPlainText("ADB Command", adbCmd))
-                                Toast.makeText(context, "Command copied!", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(32.dp).testTag("copy_adb_cmd_settings_btn")
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = ElectricCyan, modifier = Modifier.size(16.dp))
-                        }
                     }
                 }
             }
@@ -452,7 +371,7 @@ fun SettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(18.dp))
-        SectionLabel("UPDATES & ABOUT")
+        SectionLabel("UPDATES & DEVELOPER")
         Spacer(modifier = Modifier.height(8.dp))
 
         // Check for Updates Card
@@ -499,64 +418,12 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // About Developer Card
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(EmeraldMint.copy(alpha = 0.18f), CircleShape)
-                        .border(1.dp, EmeraldMint.copy(alpha = 0.38f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "Developer",
-                        tint = EmeraldMint,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(14.dp))
-                Column {
-                    Text(
-                        text = "DNS Pulse • Pulse Suite",
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                    Text(
-                        text = "Crafted by Charfeddine Ka",
-                        color = EmeraldMint,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "v${BuildConfig.VERSION_NAME} • Pure Kotlin & Jetpack Compose",
-                        color = TextSecondary,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-        }
+        // Luxurious, Luminous, Dynamic Developer Showcase Container
+        DeveloperShowcaseCard()
 
         Spacer(modifier = Modifier.height(110.dp))
-    }
-
-    if (showExpertGuide) {
-        ExpertModeBottomSheet(
-            shizukuStatus = uiState.shizukuStatus,
-            onRequestShizukuPermission = { viewModel.requestShizukuAuthorization() },
-            onGrantViaShizuku = { viewModel.grantPermissionViaShizuku() },
-            onDismiss = { showExpertGuide = false }
-        )
     }
 
     if (showThemeSheet) {
@@ -564,6 +431,297 @@ fun SettingsScreen(
             selectedTheme = uiState.themeStyle,
             onSelectTheme = { style -> viewModel.setThemeStyle(style) },
             onDismiss = { showThemeSheet = false }
+        )
+    }
+}
+
+@Composable
+private fun DeveloperShowcaseCard() {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "dev_card_press_scale"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "dev_showcase_glow")
+    val sweepPhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2f * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 5200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dev_sweep_phase"
+    )
+    val orbitRotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 6500, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dev_orbit_rotation"
+    )
+    val pulseGlow by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dev_pulse_glow"
+    )
+
+    val shape = RoundedCornerShape(24.dp)
+    val shiftX = (cos(sweepPhase) + 1f) * 0.5f
+    val shiftY = (sin(sweepPhase) + 1f) * 0.5f
+
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(pressScale)
+            .shadow(
+                elevation = 20.dp,
+                shape = shape,
+                ambientColor = ElectricCyan.copy(alpha = 0.25f * pulseGlow),
+                spotColor = EmeraldMint.copy(alpha = 0.32f * pulseGlow)
+            )
+            .testTag("developer_showcase_card"),
+        cornerRadius = 24.dp,
+        borderColor = ElectricCyan.copy(alpha = 0.65f),
+        borderWidth = 1.5.dp,
+        breathingGlow = true
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .drawWithContent {
+                    drawContent()
+                    // Flowing liquid-prism specular sheen across the card
+                    drawRect(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                ElectricCyan.copy(alpha = 0.09f * pulseGlow),
+                                HoloViolet.copy(alpha = 0.08f * pulseGlow),
+                                EmeraldMint.copy(alpha = 0.06f * pulseGlow),
+                                Color.Transparent
+                            ),
+                            start = Offset(size.width * (shiftX - 0.5f), size.height * (shiftY - 0.5f)),
+                            end = Offset(size.width * (shiftX + 0.7f), size.height * (shiftY + 0.7f))
+                        )
+                    )
+                }
+                .border(
+                    width = 1.4.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            ElectricCyan.copy(alpha = 0.85f * pulseGlow),
+                            EmeraldMint.copy(alpha = 0.75f),
+                            HoloViolet.copy(alpha = 0.75f),
+                            HoloMagenta.copy(alpha = 0.55f * pulseGlow),
+                            ElectricCyan.copy(alpha = 0.85f)
+                        ),
+                        start = Offset(shiftX * 650f, 0f),
+                        end = Offset(750f - shiftX * 500f, 520f)
+                    ),
+                    shape = shape
+                )
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(color = ElectricCyan),
+                    onClick = {}
+                )
+                .padding(18.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Header: Orbital Pulse Emblem + Brand / Developer Identity
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(54.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val r = size.minDimension * 0.46f
+                            val c = Offset(size.width / 2f, size.height / 2f)
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        ElectricCyan.copy(alpha = 0.34f * pulseGlow),
+                                        EmeraldMint.copy(alpha = 0.14f),
+                                        Color.Transparent
+                                    )
+                                ),
+                                radius = size.minDimension * 0.52f,
+                                center = c
+                            )
+                            drawArc(
+                                color = ElectricCyan.copy(alpha = 0.9f),
+                                startAngle = orbitRotation,
+                                sweepAngle = 110f,
+                                useCenter = false,
+                                topLeft = Offset(c.x - r, c.y - r),
+                                size = Size(r * 2f, r * 2f),
+                                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                            drawArc(
+                                color = EmeraldMint.copy(alpha = 0.85f),
+                                startAngle = orbitRotation + 180f,
+                                sweepAngle = 95f,
+                                useCenter = false,
+                                topLeft = Offset(c.x - r, c.y - r),
+                                size = Size(r * 2f, r * 2f),
+                                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(
+                                            ElectricCyan.copy(alpha = 0.28f),
+                                            HoloViolet.copy(alpha = 0.25f)
+                                        )
+                                    )
+                                )
+                                .border(1.dp, Color.White.copy(alpha = 0.28f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Pulse Tech",
+                                tint = ElectricCyan,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            ElectricCyan.copy(alpha = 0.18f),
+                                            EmeraldMint.copy(alpha = 0.18f)
+                                        )
+                                    )
+                                )
+                                .border(0.8.dp, ElectricCyan.copy(alpha = 0.45f), RoundedCornerShape(50))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = EmeraldMint,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = stringResource(R.string.dev_info_studio_badge),
+                                    color = ElectricCyan,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 1.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = stringResource(R.string.dev_info_title),
+                            color = TextPrimary,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.5.sp,
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Glowing Telemetry Metadata Tiles (Version n°, Build °, Last Push)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    DevTelemetryTile(
+                        label = stringResource(R.string.dev_info_version_label),
+                        value = "v${BuildConfig.VERSION_NAME}",
+                        accent = ElectricCyan,
+                        modifier = Modifier.weight(1f)
+                    )
+                    DevTelemetryTile(
+                        label = stringResource(R.string.dev_info_build_label),
+                        value = "${BuildConfig.VERSION_CODE}",
+                        accent = EmeraldMint,
+                        modifier = Modifier.weight(0.85f)
+                    )
+                    DevTelemetryTile(
+                        label = stringResource(R.string.dev_info_last_push_label),
+                        value = BuildConfig.LAST_PUSH_DATE,
+                        accent = HoloViolet,
+                        modifier = Modifier.weight(1.25f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DevTelemetryTile(
+    label: String,
+    value: String,
+    accent: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        accent.copy(alpha = 0.14f),
+                        Color.White.copy(alpha = 0.04f)
+                    )
+                )
+            )
+            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 10.dp, vertical = 9.dp)
+    ) {
+        Text(
+            text = label,
+            color = TextSecondary,
+            fontSize = 9.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = value,
+            color = accent,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

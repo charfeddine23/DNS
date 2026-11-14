@@ -1,4 +1,6 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 plugins {
   alias(libs.plugins.android.application)
@@ -18,6 +20,10 @@ android {
     targetSdk = 36
     versionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 1
     versionName = providers.gradleProperty("versionName").orNull ?: "1.0"
+
+    val lastPushDate = providers.gradleProperty("lastPush").orNull
+      ?: LocalDate.now(ZoneOffset.UTC).toString()
+    buildConfigField("String", "LAST_PUSH_DATE", "\"$lastPushDate\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
