@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
 import com.example.ui.components.ExpertModeBottomSheet
 import com.example.ui.components.GlassCard
+import com.example.ui.components.MultiThemeEngineSheet
 import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
@@ -77,6 +79,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var showExpertGuide by remember { mutableStateOf(false) }
+    var showThemeSheet by remember { mutableStateOf(false) }
     val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
     val isBatteryUnrestricted = remember(context) {
         powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
@@ -247,6 +250,75 @@ fun SettingsScreen(
                             Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = ElectricCyan, modifier = Modifier.size(16.dp))
                         }
                     }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+        SectionLabel("APPEARANCE & MULTI-THEME ENGINE")
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Multi-Theme Engine Card
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            borderColor = ElectricCyan.copy(alpha = 0.55f),
+            breathingGlow = true
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showThemeSheet = true }
+                    .padding(16.dp)
+                    .testTag("multi_theme_engine_card"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(ElectricCyan.copy(alpha = 0.16f), CircleShape)
+                            .border(1.dp, ElectricCyan.copy(alpha = 0.45f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = "Multi-Theme Engine",
+                            tint = ElectricCyan,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Multi-Theme Engine",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.5.sp
+                        )
+                        Text(
+                            text = "Active: ${uiState.themeStyle.displayName}",
+                            color = ElectricCyan,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ElectricCyan.copy(alpha = 0.15f))
+                        .border(1.dp, ElectricCyan.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 9.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = uiState.themeStyle.shortBadge,
+                        color = ElectricCyan,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.8.sp
+                    )
                 }
             }
         }
@@ -484,6 +556,14 @@ fun SettingsScreen(
             onRequestShizukuPermission = { viewModel.requestShizukuAuthorization() },
             onGrantViaShizuku = { viewModel.grantPermissionViaShizuku() },
             onDismiss = { showExpertGuide = false }
+        )
+    }
+
+    if (showThemeSheet) {
+        MultiThemeEngineSheet(
+            selectedTheme = uiState.themeStyle,
+            onSelectTheme = { style -> viewModel.setThemeStyle(style) },
+            onDismiss = { showThemeSheet = false }
         )
     }
 }

@@ -13,6 +13,7 @@ import com.example.data.repository.DnsPresetData
 import com.example.service.DnsVpnService
 import com.example.service.ShizukuDnsBridgeService
 import com.example.service.ShizukuStatus
+import com.example.ui.theme.AppThemeStyle
 import com.example.utils.GitHubReleaseInfo
 import com.example.utils.LatencyTester
 import com.example.utils.PrivateDnsController
@@ -45,6 +46,7 @@ data class HomeUiState(
     val shizukuStatus: ShizukuStatus = ShizukuStatus.NOT_AVAILABLE,
     val autoStartBoot: Boolean = false,
     val ambientGlow: Boolean = true,
+    val themeStyle: AppThemeStyle = AppThemeStyle.CHROMATIC_FROSTED_LIQUID,
     val updateState: UpdateDownloadState = UpdateDownloadState.Idle,
     val showUpdateDialog: Boolean = false
 )
@@ -92,6 +94,11 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.glowIntensityFlow.collect { enabled ->
                 _uiState.value = _uiState.value.copy(ambientGlow = enabled)
+            }
+        }
+        viewModelScope.launch {
+            prefs.themeStyleFlow.collect { style ->
+                _uiState.value = _uiState.value.copy(themeStyle = style)
             }
         }
     }
@@ -147,6 +154,13 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.setGlowIntensity(enabled)
             _uiState.value = _uiState.value.copy(ambientGlow = enabled)
+        }
+    }
+
+    fun setThemeStyle(style: AppThemeStyle) {
+        viewModelScope.launch {
+            prefs.setThemeStyle(style)
+            _uiState.value = _uiState.value.copy(themeStyle = style)
         }
     }
 

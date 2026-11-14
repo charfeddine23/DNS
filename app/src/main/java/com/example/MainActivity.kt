@@ -81,10 +81,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import com.example.data.model.DnsEngineMode
 import com.example.ui.components.BreathingAtmosphere
+import com.example.ui.components.GlassCard
 import com.example.ui.components.UpdateDialog
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ServersScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.theme.AppThemeStyle
 import com.example.ui.theme.DarkSurfaceElevated
 import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.DnsPulseTheme
@@ -92,6 +94,9 @@ import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassTopSpecular
+import com.example.ui.theme.HoloViolet
+import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.NeuBaseDark
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.utils.PrivateDnsController
@@ -121,8 +126,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            DnsPulseTheme {
-                val uiState by viewModel.uiState.collectAsState()
+            val uiState by viewModel.uiState.collectAsState()
+            DnsPulseTheme(themeStyle = uiState.themeStyle) {
                 val snackbarHostState = remember { SnackbarHostState() }
                 val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
                 val coroutineScope = rememberCoroutineScope()
@@ -369,116 +374,106 @@ private fun FloatingPulseNavBar(
         )
     }
 
+    val themeStyle = LocalAppThemeStyle.current
     val dockShape = RoundedCornerShape(28.dp)
+    val resolvedAccent = if (themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS && activeAccent == ElectricCyan) {
+        HoloViolet
+    } else {
+        activeAccent
+    }
     val animatedAccent by animateColorAsState(
-        targetValue = activeAccent,
+        targetValue = resolvedAccent,
         animationSpec = tween(500),
         label = "nav_accent"
     )
 
-    BoxWithConstraints(
+    GlassCard(
         modifier = modifier
             .fillMaxWidth()
             .widthIn(max = 460.dp)
             .height(66.dp)
-            .shadow(
-                elevation = 20.dp,
-                shape = dockShape,
-                ambientColor = animatedAccent.copy(alpha = 0.25f),
-                spotColor = animatedAccent.copy(alpha = 0.35f)
-            )
-            .clip(dockShape)
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        DarkSurfaceElevated.copy(alpha = 0.94f),
-                        DeepVoidBlack.copy(alpha = 0.97f)
-                    )
-                )
-            )
-            .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        GlassTopSpecular,
-                        GlassBorder,
-                        Color.White.copy(alpha = 0.05f)
-                    )
-                ),
-                shape = dockShape
-            )
-            .padding(5.dp)
-            .testTag("main_bottom_nav")
+            .testTag("main_bottom_nav"),
+        cornerRadius = 28.dp,
+        borderColor = animatedAccent.copy(alpha = 0.48f),
+        backgroundColor = if (themeStyle == AppThemeStyle.NEUMORPHISM) NeuBaseDark else DarkSurfaceElevated,
+        breathingGlow = themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS ||
+            themeStyle == AppThemeStyle.CHROMATIC_FROSTED_LIQUID
     ) {
-        val tabWidth = maxWidth / tabs.size
-        val clampedPosition = continuousPagePosition.coerceIn(0f, (tabs.size - 1).toFloat())
-
-        // Real-time sliding luminous indicator capsule synced directly to swipe progress
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
-                .offset(x = tabWidth * clampedPosition)
-                .width(tabWidth)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(23.dp))
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            animatedAccent.copy(alpha = 0.24f),
-                            animatedAccent.copy(alpha = 0.09f)
-                        )
-                    )
-                )
-                .border(
-                    width = 1.dp,
-                    color = animatedAccent.copy(alpha = 0.45f),
-                    shape = RoundedCornerShape(23.dp)
-                )
-        )
-
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .padding(5.dp)
         ) {
-            tabs.forEach { tab ->
-                val isSelected = currentPage == tab.index
-                val iconScale by animateFloatAsState(
-                    targetValue = if (isSelected) 1.12f else 1f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    ),
-                    label = "tab_icon_scale_${tab.index}"
-                )
+            val tabWidth = maxWidth / tabs.size
+            val clampedPosition = continuousPagePosition.coerceIn(0f, (tabs.size - 1).toFloat())
 
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(23.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = ripple(bounded = true, color = animatedAccent),
-                            onClick = { onSelectPage(tab.index) }
+            // Real-time sliding luminous indicator capsule synced directly to swipe progress
+            Box(
+                modifier = Modifier
+                    .offset(x = tabWidth * clampedPosition)
+                    .width(tabWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(23.dp))
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                animatedAccent.copy(alpha = 0.24f),
+                                animatedAccent.copy(alpha = 0.09f)
+                            )
                         )
-                        .testTag(tab.testTag),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                        contentDescription = tab.contentDesc,
-                        tint = if (isSelected) animatedAccent else TextSecondary,
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = animatedAccent.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(23.dp)
+                    )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                tabs.forEach { tab ->
+                    val isSelected = currentPage == tab.index
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1.12f else 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        ),
+                        label = "tab_icon_scale_${tab.index}"
+                    )
+
+                    Column(
                         modifier = Modifier
-                            .size(21.dp)
-                            .scale(iconScale)
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = tab.label,
-                        color = if (isSelected) TextPrimary else TextSecondary,
-                        fontSize = 10.5.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                    )
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(23.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(bounded = true, color = animatedAccent),
+                                onClick = { onSelectPage(tab.index) }
+                            )
+                            .testTag(tab.testTag),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                            contentDescription = tab.contentDesc,
+                            tint = if (isSelected) animatedAccent else TextSecondary,
+                            modifier = Modifier
+                                .size(21.dp)
+                                .scale(iconScale)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = tab.label,
+                            color = if (isSelected) TextPrimary else TextSecondary,
+                            fontSize = 10.5.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
                 }
             }
         }

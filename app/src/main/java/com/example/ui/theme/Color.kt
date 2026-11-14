@@ -1,5 +1,9 @@
 package com.example.ui.theme
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 // Dark Liquid Glass & Neumorphism Cyber Palette
@@ -10,6 +14,23 @@ val GlassSurfaceVariant = Color(0xE61B2332)
 val GlassBorder = Color(0x24FFFFFF)
 val GlassBorderLuminous = Color(0x4D00E5FF)
 val GlassTopSpecular = Color(0x33FFFFFF)
+
+// Neumorphism Sculpted Slate Tokens
+val NeuBaseDark = Color(0xFF171B24)
+val NeuSurfaceLight = Color(0xFF1F2430)
+val NeuHighlightEdge = Color(0xFF2B3242)
+val NeuShadowEdge = Color(0xFF0A0C12)
+
+// Holographic & Chromatic Dispersion Tokens
+val HoloViolet = Color(0xFF9D4EDD)
+val HoloMagenta = Color(0xFFFF2E93)
+val ChromaticCyan = Color(0xFF00F0FF)
+val ChromaticMagenta = Color(0xFFFF3D8B)
+val ChromaticAmber = Color(0xFFFFD166)
+
+// Frosted Arctic Tokens
+val FrostedTint = Color(0x36DCEEFF)
+val FrostedBorder = Color(0x52E6F4FF)
 
 // Vibrant Cyber Accents
 val ElectricCyan = Color(0xFF00E5FF)

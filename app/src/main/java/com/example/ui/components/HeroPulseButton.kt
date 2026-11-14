@@ -59,9 +59,21 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.AppThemeStyle
+import com.example.ui.theme.ChromaticAmber
+import com.example.ui.theme.ChromaticCyan
+import com.example.ui.theme.ChromaticMagenta
 import com.example.ui.theme.CrimsonPulse
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
+import com.example.ui.theme.FrostedBorder
+import com.example.ui.theme.HoloMagenta
+import com.example.ui.theme.HoloViolet
+import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.NeuBaseDark
+import com.example.ui.theme.NeuHighlightEdge
+import com.example.ui.theme.NeuShadowEdge
+import com.example.ui.theme.NeuSurfaceLight
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
@@ -74,6 +86,7 @@ fun HeroPulseButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val themeStyle = LocalAppThemeStyle.current
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -82,6 +95,7 @@ fun HeroPulseButton(
         targetValue = when {
             !isActive -> CrimsonPulse
             isAdGuardShield -> EmeraldMint
+            themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> HoloViolet
             else -> ElectricCyan
         },
         animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
@@ -99,7 +113,6 @@ fun HeroPulseButton(
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse_reactor")
 
-    // Organic respiratory pulse even in idle, deeper when protected
     val coreBreath by infiniteTransition.animateFloat(
         initialValue = 1.0f,
         targetValue = if (isActive) 1.038f else 1.018f,
@@ -110,7 +123,6 @@ fun HeroPulseButton(
         label = "core_breath"
     )
 
-    // Orbital telemetry arc rotation
     val orbitAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -121,7 +133,6 @@ fun HeroPulseButton(
         label = "orbit_angle"
     )
 
-    // 3 staggered radar shockwaves
     val wave1 by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -150,13 +161,54 @@ fun HeroPulseButton(
         label = "wave3"
     )
 
+    val coreFillBrush = when (themeStyle) {
+        AppThemeStyle.NEUMORPHISM -> Brush.linearGradient(
+            colors = listOf(NeuSurfaceLight, NeuBaseDark),
+            start = Offset.Zero,
+            end = Offset(450f, 450f)
+        )
+        AppThemeStyle.FROSTED_GLASSMORPHISM -> Brush.radialGradient(
+            colors = listOf(Color(0xFF283A4E), Color(0xFF15202E), Color(0xFF0D141F))
+        )
+        AppThemeStyle.GLASS_PSD_MOCKUP -> Brush.linearGradient(
+            colors = listOf(Color(0x36FFFFFF), Color(0xE0131C2B), Color(0xFF0B101B)),
+            start = Offset.Zero,
+            end = Offset(420f, 420f)
+        )
+        else -> Brush.radialGradient(
+            colors = listOf(Color(0xFF232C3B), Color(0xFF131822), Color(0xFF0A0D14)),
+            center = Offset(120f, 100f),
+            radius = 340f
+        )
+    }
+
+    val coreBorderBrush = when (themeStyle) {
+        AppThemeStyle.NEUMORPHISM -> Brush.linearGradient(
+            colors = listOf(
+                if (isActive) activeGlowColor.copy(alpha = 0.7f) else NeuHighlightEdge,
+                NeuShadowEdge
+            )
+        )
+        AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> Brush.sweepGradient(
+            listOf(ElectricCyan, HoloViolet, HoloMagenta, EmeraldMint, ElectricCyan)
+        )
+        AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> Brush.sweepGradient(
+            listOf(ChromaticCyan, ChromaticMagenta, ChromaticAmber, activeGlowColor, ChromaticCyan)
+        )
+        AppThemeStyle.FROSTED_GLASSMORPHISM -> Brush.verticalGradient(
+            listOf(FrostedBorder, activeGlowColor.copy(alpha = 0.65f), Color.White.copy(alpha = 0.18f))
+        )
+        AppThemeStyle.GLASS_PSD_MOCKUP -> Brush.linearGradient(
+            listOf(Color.White.copy(alpha = 0.65f), activeGlowColor.copy(alpha = 0.7f), Color.White.copy(alpha = 0.12f))
+        )
+    }
+
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(256.dp)
             .testTag("hero_pulse_button_container")
     ) {
-        // Outer Harmonic Radar Waves & Rotating Telemetry Arcs
         Canvas(modifier = Modifier.size(256.dp)) {
             val centerOffset = Offset(size.width / 2, size.height / 2)
             val baseRadius = size.width * 0.34f
@@ -174,7 +226,6 @@ fun HeroPulseButton(
                 }
             }
 
-            // Outer Precision Orbital Ring 1 (clockwise)
             val ring1Radius = size.width * 0.385f
             drawArc(
                 color = activeGlowColor.copy(alpha = if (isActive) 0.65f else 0.22f),
@@ -195,7 +246,6 @@ fun HeroPulseButton(
                 style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
             )
 
-            // Inner Orbital Ring 2 (counter-clockwise)
             val ring2Radius = size.width * 0.352f
             drawArc(
                 color = Color.White.copy(alpha = if (isActive) 0.35f else 0.10f),
@@ -208,7 +258,6 @@ fun HeroPulseButton(
             )
         }
 
-        // Ambient Radial Glow Halo behind core
         Box(
             modifier = Modifier
                 .size(198.dp)
@@ -225,7 +274,6 @@ fun HeroPulseButton(
                 )
         )
 
-        // Core Interactive Reactor Button
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
@@ -238,28 +286,10 @@ fun HeroPulseButton(
                     spotColor = activeGlowColor.copy(alpha = 0.6f)
                 )
                 .clip(CircleShape)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFF232C3B),
-                            Color(0xFF131822),
-                            Color(0xFF0A0D14)
-                        ),
-                        center = Offset(120f, 100f),
-                        radius = 340f
-                    )
-                )
+                .background(brush = coreFillBrush)
                 .border(
                     width = 2.dp,
-                    brush = Brush.sweepGradient(
-                        listOf(
-                            activeGlowColor.copy(alpha = 0.95f),
-                            Color.White.copy(alpha = 0.25f),
-                            activeGlowColor.copy(alpha = 0.45f),
-                            Color.White.copy(alpha = 0.15f),
-                            activeGlowColor.copy(alpha = 0.95f)
-                        )
-                    ),
+                    brush = coreBorderBrush,
                     shape = CircleShape
                 )
                 .clickable(
