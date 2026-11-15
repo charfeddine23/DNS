@@ -50,6 +50,7 @@ fun GlassCard(
     breathingGlow: Boolean = false,
     overrideThemeStyle: AppThemeStyle? = null,
     surfaceAlphaOverride: Float? = null,
+    isStackCard: Boolean = false,
     content: @Composable BoxScope.() -> Unit
 ) {
     val simpleMode = LocalSimpleMode.current
@@ -90,13 +91,18 @@ fun GlassCard(
 
     val animatedBorderColor by animateColorAsState(
         targetValue = effectiveBorderColor,
-        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "glass_border_color"
+    )
+    val animatedBgColor by animateColorAsState(
+        targetValue = effectiveBackground,
+        animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
+        label = "glass_bg_color"
     )
 
     val needsContinuousAnim = breathingGlow ||
-        themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS ||
-        themeStyle == AppThemeStyle.SYNTHWAVE_84
+        (!isStackCard && (themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS ||
+            themeStyle == AppThemeStyle.SYNTHWAVE_84))
     val animPhase = if (needsContinuousAnim) {
         val transition = rememberInfiniteTransition(label = "card_optic_anim")
         val value by transition.animateFloat(
@@ -113,7 +119,9 @@ fun GlassCard(
         0f
     }
 
-    val breathAlpha = if (breathingGlow) 0.30f + 0.38f * ((sin(animPhase) + 1f) * 0.5f) else 0.42f
+    val breathAlpha = if (breathingGlow) 0.42f + 0.36f * ((sin(animPhase) + 1f) * 0.5f) else 0.34f
+    val hasExplicitAccentBorder = effectiveBorderColor != palette.glassBorder
+    val stackSurfaceAlpha = surfaceAlphaOverride ?: if (isDark) 0.88f else 0.94f
 
     // Snapshot palette colors for non-@Composable draw blocks
     val neuHighlight = palette.neuHighlightEdge
@@ -131,80 +139,121 @@ fun GlassCard(
     val surfaceElev = palette.surfaceElevated
     val surfaceVar = palette.glassSurfaceVariant
 
+    fun Modifier.optionalElevation(elevation: Dp, ambient: Color, spot: Color): Modifier =
+        if (isStackCard) this else this.shadow(
+            elevation = elevation,
+            shape = shape,
+            ambientColor = ambient,
+            spotColor = spot
+        )
+
     val baseModifier = when (themeStyle) {
         AppThemeStyle.NEUMORPHISM -> {
-            modifier
-                .drawBehind {
-                    val cr = cornerRadius.toPx()
-                    val offsetPx = 4.5.dp.toPx()
-                    drawRoundRect(
-                        color = neuHighlight.copy(alpha = if (isDark) 0.78f else 0.95f),
-                        topLeft = Offset(-offsetPx * 0.65f, -offsetPx * 0.65f),
-                        size = Size(size.width, size.height),
-                        cornerRadius = CornerRadius(cr, cr)
-                    )
-                    drawRoundRect(
-                        color = neuShadow.copy(alpha = if (isDark) 0.92f else 0.68f),
-                        topLeft = Offset(offsetPx, offsetPx),
-                        size = Size(size.width, size.height),
-                        cornerRadius = CornerRadius(cr, cr)
-                    )
-                }
-                .clip(shape)
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(neuSurface, neuBase),
-                        start = Offset.Zero,
-                        end = Offset(600f, 600f)
-                    )
-                )
-                .border(
-                    width = if (breathingGlow) 1.2.dp else 0.9.dp,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            if (breathingGlow) animatedBorderColor.copy(alpha = breathAlpha)
-                            else neuHighlight.copy(alpha = 0.85f),
-                            neuShadow.copy(alpha = if (isDark) 0.9f else 0.45f)
+            val baseMod = if (isStackCard) {
+                modifier
+                    .clip(shape)
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                neuSurface.copy(alpha = stackSurfaceAlpha),
+                                animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                                neuBase.copy(alpha = stackSurfaceAlpha)
+                            ),
+                            start = Offset.Zero,
+                            end = Offset(600f, 600f)
                         )
-                    ),
-                    shape = shape
-                )
+                    )
+                    .drawWithContent {
+                        drawContent()
+                        val cr = cornerRadius.toPx()
+                        val inset = 1.dp.toPx()
+                        val innerCr = (cr - inset).coerceAtLeast(0f)
+                        drawRoundRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    neuHighlight.copy(alpha = if (isDark) 0.52f else 0.92f),
+                                    Color.Transparent,
+                                    neuShadow.copy(alpha = if (isDark) 0.55f else 0.30f)
+                                )
+                            ),
+                            topLeft = Offset(inset, inset),
+                            size = Size(
+                                (size.width - inset * 2f).coerceAtLeast(1f),
+                                (size.height - inset * 2f).coerceAtLeast(1f)
+                            ),
+                            cornerRadius = CornerRadius(innerCr, innerCr),
+                            style = Stroke(width = 1.dp.toPx())
+                        )
+                    }
+            } else {
+                modifier
+                    .drawBehind {
+                        val cr = cornerRadius.toPx()
+                        val offsetPx = 4.5.dp.toPx()
+                        drawRoundRect(
+                            color = neuHighlight.copy(alpha = if (isDark) 0.78f else 0.95f),
+                            topLeft = Offset(-offsetPx * 0.65f, -offsetPx * 0.65f),
+                            size = Size(size.width, size.height),
+                            cornerRadius = CornerRadius(cr, cr)
+                        )
+                        drawRoundRect(
+                            color = neuShadow.copy(alpha = if (isDark) 0.92f else 0.68f),
+                            topLeft = Offset(offsetPx, offsetPx),
+                            size = Size(size.width, size.height),
+                            cornerRadius = CornerRadius(cr, cr)
+                        )
+                    }
+                    .clip(shape)
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(neuSurface, neuBase),
+                            start = Offset.Zero,
+                            end = Offset(600f, 600f)
+                        )
+                    )
+            }
+
+            baseMod.border(
+                width = if (isStackCard) borderWidth else if (breathingGlow) 1.2.dp else 0.9.dp,
+                brush = Brush.linearGradient(
+                    colors = if (hasExplicitAccentBorder) {
+                        listOf(
+                            animatedBorderColor.copy(alpha = if (breathingGlow) breathAlpha + 0.25f else 0.85f),
+                            neuHighlight.copy(alpha = 0.7f),
+                            animatedBorderColor.copy(alpha = 0.50f)
+                        )
+                    } else {
+                        listOf(
+                            neuHighlight.copy(alpha = if (isDark) 0.85f else 0.95f),
+                            neuShadow.copy(alpha = if (isDark) 0.78f else 0.40f)
+                        )
+                    }
+                ),
+                shape = shape
+            )
         }
 
         AppThemeStyle.GLASS_PSD_MOCKUP -> {
-            val baseBackdrop = if (surfaceAlphaOverride != null) {
-                Modifier.background(effectiveBackground.copy(alpha = surfaceAlphaOverride))
-            } else {
-                Modifier
-            }
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (isDark) 16.dp else 10.dp,
-                    shape = shape,
-                    ambientColor = if (isDark) Color.Black.copy(alpha = 0.65f) else Color.Black.copy(alpha = 0.14f),
-                    spotColor = animatedBorderColor.copy(alpha = 0.35f)
+                    ambient = if (isDark) Color.Black.copy(alpha = 0.65f) else Color.Black.copy(alpha = 0.14f),
+                    spot = animatedBorderColor.copy(alpha = 0.35f)
                 )
                 .clip(shape)
-                .then(baseBackdrop)
                 .background(
                     brush = Brush.linearGradient(
-                        colors = if (surfaceAlphaOverride != null) {
+                        colors = if (isDark) {
                             listOf(
-                                Color.White.copy(alpha = if (isDark) 0.06f else 0.25f),
-                                Color.Transparent,
-                                Color.Black.copy(alpha = if (isDark) 0.14f else 0.03f)
-                            )
-                        } else if (isDark) {
-                            listOf(
-                                Color.White.copy(alpha = 0.14f),
-                                effectiveBackground.copy(alpha = 0.62f),
-                                Color.White.copy(alpha = 0.05f)
+                                animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                                surfaceVar.copy(alpha = (stackSurfaceAlpha - 0.06f).coerceAtLeast(0.75f)),
+                                animatedBgColor.copy(alpha = stackSurfaceAlpha)
                             )
                         } else {
                             listOf(
-                                Color.White.copy(alpha = 0.96f),
-                                effectiveBackground.copy(alpha = 0.88f),
-                                surfaceVar.copy(alpha = 0.72f)
+                                Color.White.copy(alpha = stackSurfaceAlpha),
+                                animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                                surfaceVar.copy(alpha = (stackSurfaceAlpha - 0.08f).coerceAtLeast(0.78f))
                             )
                         },
                         start = Offset(0f, 0f),
@@ -217,7 +266,7 @@ fun GlassCard(
                         brush = Brush.linearGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.White.copy(alpha = if (surfaceAlphaOverride != null) 0.05f else 0.09f),
+                                Color.White.copy(alpha = if (isStackCard) 0.045f else 0.085f),
                                 Color.White.copy(alpha = 0.015f),
                                 Color.Transparent
                             ),
@@ -227,13 +276,21 @@ fun GlassCard(
                     )
                 }
                 .border(
-                    width = 1.2.dp,
+                    width = if (isStackCard) borderWidth else 1.2.dp,
                     brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (isDark) 0.45f else 0.90f),
-                            animatedBorderColor.copy(alpha = if (breathingGlow) breathAlpha else 0.30f),
-                            palette.glassBorder
-                        ),
+                        colors = if (hasExplicitAccentBorder) {
+                            listOf(
+                                Color.White.copy(alpha = if (isDark) 0.55f else 0.90f),
+                                animatedBorderColor.copy(alpha = if (breathingGlow) breathAlpha + 0.2f else 0.85f),
+                                animatedBorderColor.copy(alpha = 0.45f)
+                            )
+                        } else {
+                            listOf(
+                                Color.White.copy(alpha = if (isDark) 0.32f else 0.88f),
+                                palette.glassBorder,
+                                palette.glassBorder.copy(alpha = 0.14f)
+                            )
+                        },
                         start = Offset.Zero,
                         end = Offset(700f, 700f)
                     ),
@@ -243,81 +300,83 @@ fun GlassCard(
 
         AppThemeStyle.FROSTED_GLASSMORPHISM -> {
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (isDark) 12.dp else 8.dp,
-                    shape = shape,
-                    ambientColor = primaryAccent.copy(alpha = 0.16f),
-                    spotColor = Color.Black.copy(alpha = if (isDark) 0.55f else 0.12f)
+                    ambient = primaryAccent.copy(alpha = 0.16f),
+                    spot = Color.Black.copy(alpha = if (isDark) 0.55f else 0.12f)
                 )
                 .clip(shape)
-                .then(
-                    if (surfaceAlphaOverride != null) {
-                        Modifier.background(effectiveBackground.copy(alpha = surfaceAlphaOverride))
-                    } else {
-                        Modifier
-                    }
-                )
                 .background(
                     brush = Brush.verticalGradient(
                         colors = if (!isDark) {
                             listOf(
-                                frostedTint,
-                                surfaceElev.copy(alpha = surfaceAlphaOverride ?: 0.90f),
-                                surfaceVar.copy(alpha = surfaceAlphaOverride ?: 0.85f)
-                            )
-                        } else if (surfaceAlphaOverride != null) {
-                            listOf(
-                                Color(0x18DCEEFF),
-                                Color(0xE6121A26),
-                                Color(0xE60D131D)
+                                frostedTint.copy(alpha = stackSurfaceAlpha),
+                                animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                                surfaceVar.copy(alpha = (stackSurfaceAlpha - 0.05f).coerceAtLeast(0.80f))
                             )
                         } else {
                             listOf(
-                                frostedTint,
-                                Color(0xA6162231),
-                                Color(0xBD0F1722)
+                                frostedTint.copy(alpha = if (isStackCard) 0.16f else 0.22f),
+                                animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                                surfaceElev.copy(alpha = stackSurfaceAlpha)
                             )
                         }
                     )
                 )
                 .drawWithContent {
                     drawContent()
-                    val step = 18.dp.toPx()
-                    var x = 8f
-                    var idx = 0
-                    val grainTint = if (isDark) Color.White else primaryAccent
-                    while (x < size.width) {
-                        var y = 8f
-                        while (y < size.height) {
-                            val jitter = ((idx * 37) % 11) / 11f
-                            if (idx % 3 == 0) {
-                                drawCircle(
-                                    color = grainTint.copy(alpha = 0.035f + jitter * 0.025f),
-                                    radius = 0.9.dp.toPx(),
-                                    center = Offset(x + jitter * 6f, y + jitter * 6f)
-                                )
+                    if (!isStackCard) {
+                        val step = 18.dp.toPx()
+                        var x = 8f
+                        var idx = 0
+                        val grainTint = if (isDark) Color.White else primaryAccent
+                        while (x < size.width) {
+                            var y = 8f
+                            while (y < size.height) {
+                                val jitter = ((idx * 37) % 11) / 11f
+                                if (idx % 3 == 0) {
+                                    drawCircle(
+                                        color = grainTint.copy(alpha = 0.032f + jitter * 0.022f),
+                                        radius = 0.9.dp.toPx(),
+                                        center = Offset(x + jitter * 6f, y + jitter * 6f)
+                                    )
+                                }
+                                idx++
+                                y += step
                             }
-                            idx++
-                            y += step
+                            x += step
                         }
-                        x += step
                     }
+                    val cr = cornerRadius.toPx()
+                    val inset = 1.dp.toPx()
+                    val innerCr = (cr - inset).coerceAtLeast(0f)
                     drawRoundRect(
                         color = if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.65f),
-                        topLeft = Offset(1.dp.toPx(), 1.dp.toPx()),
-                        size = Size(size.width - 2.dp.toPx(), size.height - 2.dp.toPx()),
-                        cornerRadius = CornerRadius(cornerRadius.toPx(), cornerRadius.toPx()),
-                        style = Stroke(width = 1.dp.toPx())
+                        topLeft = Offset(inset, inset),
+                        size = Size(
+                            (size.width - inset * 2f).coerceAtLeast(1f),
+                            (size.height - inset * 2f).coerceAtLeast(1f)
+                        ),
+                        cornerRadius = CornerRadius(innerCr, innerCr),
+                        style = Stroke(width = 0.9.dp.toPx())
                     )
                 }
                 .border(
                     width = borderWidth,
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            frostedBorder,
-                            if (breathingGlow) animatedBorderColor.copy(alpha = breathAlpha) else palette.glassBorder,
-                            if (isDark) Color.White.copy(alpha = 0.12f) else primaryAccent.copy(alpha = 0.18f)
-                        )
+                        colors = if (hasExplicitAccentBorder) {
+                            listOf(
+                                animatedBorderColor.copy(alpha = 0.85f),
+                                frostedBorder.copy(alpha = 0.65f),
+                                animatedBorderColor.copy(alpha = 0.45f)
+                            )
+                        } else {
+                            listOf(
+                                frostedBorder.copy(alpha = if (isStackCard) 0.45f else 0.70f),
+                                palette.glassBorder,
+                                palette.glassBorder.copy(alpha = 0.14f)
+                            )
+                        }
                     ),
                     shape = shape
                 )
@@ -326,27 +385,18 @@ fun GlassCard(
         AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> {
             val shift = (cos(animPhase) + 1f) * 0.5f
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (isDark) 16.dp else 10.dp,
-                    shape = shape,
-                    ambientColor = tertiaryAccent.copy(alpha = if (isDark) 0.30f else 0.16f),
-                    spotColor = primaryAccent.copy(alpha = if (isDark) 0.35f else 0.18f)
+                    ambient = tertiaryAccent.copy(alpha = if (isDark) 0.30f else 0.16f),
+                    spot = primaryAccent.copy(alpha = if (isDark) 0.35f else 0.18f)
                 )
                 .clip(shape)
-                .then(
-                    if (surfaceAlphaOverride != null) {
-                        Modifier.background(effectiveBackground.copy(alpha = surfaceAlphaOverride))
-                    } else {
-                        Modifier
-                    }
-                )
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            primaryAccent.copy(alpha = if (surfaceAlphaOverride != null) 0.06f else 0.10f),
-                            tertiaryAccent.copy(alpha = if (surfaceAlphaOverride != null) 0.08f else 0.12f),
-                            effectiveBackground.copy(alpha = surfaceAlphaOverride ?: if (isDark) 0.82f else 0.92f),
-                            secondaryGlow.copy(alpha = if (surfaceAlphaOverride != null) 0.05f else 0.08f)
+                            animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                            surfaceVar.copy(alpha = (stackSurfaceAlpha - 0.04f).coerceAtLeast(0.82f)),
+                            animatedBgColor.copy(alpha = stackSurfaceAlpha)
                         ),
                         start = Offset(shift * 260f, 0f),
                         end = Offset(700f + shift * 220f, 700f)
@@ -357,9 +407,9 @@ fun GlassCard(
                     drawRect(
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                Color.Transparent,
-                                primaryAccent.copy(alpha = 0.07f),
-                                secondaryGlow.copy(alpha = 0.06f),
+                                primaryAccent.copy(alpha = if (isStackCard) 0.04f else 0.07f),
+                                tertiaryAccent.copy(alpha = if (isStackCard) 0.05f else 0.08f),
+                                secondaryGlow.copy(alpha = if (isStackCard) 0.03f else 0.06f),
                                 Color.Transparent
                             ),
                             start = Offset(size.width * (shift - 0.3f), 0f),
@@ -368,14 +418,29 @@ fun GlassCard(
                     )
                 }
                 .border(
-                    width = 1.4.dp,
+                    width = if (isStackCard) borderWidth else 1.4.dp,
                     brush = Brush.linearGradient(
-                        colors = listOf(
-                            primaryAccent.copy(alpha = 0.72f),
-                            tertiaryAccent.copy(alpha = 0.65f),
-                            secondaryGlow.copy(alpha = 0.62f),
-                            emeraldAccent.copy(alpha = 0.55f)
-                        ),
+                        colors = if (isStackCard && !hasExplicitAccentBorder) {
+                            listOf(
+                                primaryAccent.copy(alpha = 0.28f),
+                                tertiaryAccent.copy(alpha = 0.25f),
+                                secondaryGlow.copy(alpha = 0.22f)
+                            )
+                        } else if (hasExplicitAccentBorder) {
+                            listOf(
+                                animatedBorderColor.copy(alpha = 0.90f),
+                                primaryAccent.copy(alpha = 0.72f),
+                                tertiaryAccent.copy(alpha = 0.68f),
+                                emeraldAccent.copy(alpha = 0.72f)
+                            )
+                        } else {
+                            listOf(
+                                primaryAccent.copy(alpha = 0.72f),
+                                tertiaryAccent.copy(alpha = 0.65f),
+                                secondaryGlow.copy(alpha = 0.62f),
+                                emeraldAccent.copy(alpha = 0.55f)
+                            )
+                        },
                         start = Offset(shift * 420f, 0f),
                         end = Offset(520f - shift * 300f, 520f)
                     ),
@@ -385,39 +450,25 @@ fun GlassCard(
 
         AppThemeStyle.CHROMATIC_FROSTED_LIQUID -> {
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (breathingGlow) 18.dp else 10.dp,
-                    shape = shape,
-                    ambientColor = primaryAccent.copy(alpha = if (isDark) 0.22f else 0.14f),
-                    spotColor = secondaryGlow.copy(alpha = if (isDark) 0.22f else 0.14f)
+                    ambient = primaryAccent.copy(alpha = if (isDark) 0.22f else 0.14f),
+                    spot = secondaryGlow.copy(alpha = if (isDark) 0.22f else 0.14f)
                 )
                 .clip(shape)
-                .then(
-                    if (surfaceAlphaOverride != null) {
-                        Modifier.background(effectiveBackground.copy(alpha = surfaceAlphaOverride))
-                    } else {
-                        Modifier
-                    }
-                )
                 .background(
                     brush = Brush.verticalGradient(
                         colors = if (!isDark) {
                             listOf(
-                                Color.White.copy(alpha = 0.96f),
-                                effectiveBackground.copy(alpha = surfaceAlphaOverride ?: 0.90f),
-                                surfaceVar.copy(alpha = surfaceAlphaOverride ?: 0.88f)
-                            )
-                        } else if (surfaceAlphaOverride != null) {
-                            listOf(
-                                Color(0x14E8F5FF),
-                                Color(0xE6111824),
-                                Color(0xE60A0E16)
+                                Color.White.copy(alpha = stackSurfaceAlpha),
+                                animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                                surfaceVar.copy(alpha = (stackSurfaceAlpha - 0.04f).coerceAtLeast(0.84f))
                             )
                         } else {
                             listOf(
-                                Color(0x28E8F5FF),
-                                Color(0xC2111824),
-                                Color(0xD90A0E16)
+                                surfaceVar.copy(alpha = (stackSurfaceAlpha - 0.04f).coerceAtLeast(0.82f)),
+                                animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                                surfaceElev.copy(alpha = stackSurfaceAlpha)
                             )
                         }
                     )
@@ -429,63 +480,75 @@ fun GlassCard(
                         drawRect(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.Black.copy(alpha = 0.38f),
+                                    Color.Black.copy(alpha = if (isStackCard) 0.18f else 0.34f),
                                     Color.Transparent,
                                     Color.Transparent,
-                                    Color.Black.copy(alpha = 0.45f)
-                                )
-                            )
-                        )
-                        drawRect(
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = 0.24f),
-                                    Color.Transparent,
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.24f)
+                                    Color.Black.copy(alpha = if (isStackCard) 0.22f else 0.40f)
                                 )
                             )
                         )
                     }
+                    // Concentric Chromatic Dispersion edge refraction channels
+                    val inset1 = 0.75.dp.toPx()
+                    val cr1 = (cr - inset1).coerceAtLeast(0f)
+                    val dispAlphaScale = if (isStackCard && !hasExplicitAccentBorder) 0.35f else 1f
                     drawRoundRect(
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                primaryAccent.copy(alpha = if (isDark) 0.55f else 0.42f),
+                                primaryAccent.copy(alpha = (if (isDark) 0.42f else 0.32f) * dispAlphaScale),
                                 Color.Transparent,
-                                amberAccent.copy(alpha = if (isDark) 0.35f else 0.25f)
+                                amberAccent.copy(alpha = (if (isDark) 0.26f else 0.20f) * dispAlphaScale)
                             ),
                             start = Offset.Zero,
                             end = Offset(size.width, size.height)
                         ),
-                        topLeft = Offset(0.6.dp.toPx(), 0.6.dp.toPx()),
-                        size = Size(size.width - 1.2.dp.toPx(), size.height - 1.2.dp.toPx()),
-                        cornerRadius = CornerRadius(cr, cr),
-                        style = Stroke(width = 1.dp.toPx())
-                    )
-                    drawRoundRect(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                secondaryGlow.copy(alpha = if (isDark) 0.45f else 0.32f),
-                                Color.Transparent,
-                                primaryAccent.copy(alpha = if (isDark) 0.42f else 0.32f)
-                            ),
-                            start = Offset(size.width, 0f),
-                            end = Offset(0f, size.height)
+                        topLeft = Offset(inset1, inset1),
+                        size = Size(
+                            (size.width - inset1 * 2f).coerceAtLeast(1f),
+                            (size.height - inset1 * 2f).coerceAtLeast(1f)
                         ),
-                        topLeft = Offset(1.8.dp.toPx(), 1.8.dp.toPx()),
-                        size = Size(size.width - 3.6.dp.toPx(), size.height - 3.6.dp.toPx()),
-                        cornerRadius = CornerRadius(cr, cr),
-                        style = Stroke(width = 0.8.dp.toPx())
+                        cornerRadius = CornerRadius(cr1, cr1),
+                        style = Stroke(width = 0.9.dp.toPx())
                     )
+                    if (!isStackCard) {
+                        val inset2 = 1.6.dp.toPx()
+                        val cr2 = (cr - inset2).coerceAtLeast(0f)
+                        drawRoundRect(
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    secondaryGlow.copy(alpha = if (isDark) 0.35f else 0.26f),
+                                    Color.Transparent,
+                                    primaryAccent.copy(alpha = if (isDark) 0.34f else 0.26f)
+                                ),
+                                start = Offset(size.width, 0f),
+                                end = Offset(0f, size.height)
+                            ),
+                            topLeft = Offset(inset2, inset2),
+                            size = Size(
+                                (size.width - inset2 * 2f).coerceAtLeast(1f),
+                                (size.height - inset2 * 2f).coerceAtLeast(1f)
+                            ),
+                            cornerRadius = CornerRadius(cr2, cr2),
+                            style = Stroke(width = 0.75.dp.toPx())
+                        )
+                    }
                 }
                 .border(
-                    width = if (breathingGlow) 1.4.dp else borderWidth,
+                    width = if (isStackCard) borderWidth else if (breathingGlow) 1.4.dp else borderWidth,
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            topSpecular,
-                            if (breathingGlow) animatedBorderColor.copy(alpha = breathAlpha) else primaryAccent.copy(alpha = 0.28f),
-                            secondaryGlow.copy(alpha = 0.22f)
-                        )
+                        colors = if (hasExplicitAccentBorder) {
+                            listOf(
+                                topSpecular.copy(alpha = 0.45f),
+                                animatedBorderColor.copy(alpha = if (breathingGlow) breathAlpha + 0.28f else 0.80f),
+                                animatedBorderColor.copy(alpha = 0.42f)
+                            )
+                        } else {
+                            listOf(
+                                topSpecular.copy(alpha = if (isStackCard) 0.24f else 0.45f),
+                                primaryAccent.copy(alpha = if (isStackCard) 0.16f else 0.28f),
+                                secondaryGlow.copy(alpha = if (isStackCard) 0.12f else 0.22f)
+                            )
+                        }
                     ),
                     shape = shape
                 )
@@ -493,19 +556,18 @@ fun GlassCard(
 
         AppThemeStyle.TOKYO_NIGHT -> {
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (isDark) 14.dp else 8.dp,
-                    shape = shape,
-                    ambientColor = primaryAccent.copy(alpha = 0.24f),
-                    spotColor = tertiaryAccent.copy(alpha = 0.24f)
+                    ambient = primaryAccent.copy(alpha = 0.24f),
+                    spot = tertiaryAccent.copy(alpha = 0.24f)
                 )
                 .clip(shape)
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            surfaceVar.copy(alpha = surfaceAlphaOverride ?: if (isDark) 0.92f else 0.95f),
-                            effectiveBackground.copy(alpha = surfaceAlphaOverride ?: if (isDark) 0.88f else 0.94f),
-                            surfaceElev.copy(alpha = surfaceAlphaOverride ?: 0.94f)
+                            surfaceVar.copy(alpha = stackSurfaceAlpha),
+                            animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                            surfaceElev.copy(alpha = stackSurfaceAlpha)
                         ),
                         start = Offset.Zero,
                         end = Offset(700f, 700f)
@@ -516,21 +578,34 @@ fun GlassCard(
                     drawRect(
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                primaryAccent.copy(alpha = if (isDark) 0.08f else 0.06f),
+                                primaryAccent.copy(alpha = if (isDark) 0.07f else 0.05f),
                                 Color.Transparent,
-                                tertiaryAccent.copy(alpha = if (isDark) 0.08f else 0.05f)
+                                tertiaryAccent.copy(alpha = if (isDark) 0.07f else 0.04f)
                             )
                         )
                     )
                 }
                 .border(
-                    width = if (breathingGlow) 1.4.dp else borderWidth,
+                    width = if (isStackCard) borderWidth else if (breathingGlow) 1.4.dp else borderWidth,
                     brush = Brush.linearGradient(
-                        colors = listOf(
-                            primaryAccent.copy(alpha = if (breathingGlow) breathAlpha + 0.25f else 0.48f),
-                            tertiaryAccent.copy(alpha = 0.42f),
-                            emeraldAccent.copy(alpha = 0.28f)
-                        )
+                        colors = if (isStackCard && !hasExplicitAccentBorder) {
+                            listOf(
+                                primaryAccent.copy(alpha = 0.28f),
+                                tertiaryAccent.copy(alpha = 0.22f)
+                            )
+                        } else if (hasExplicitAccentBorder) {
+                            listOf(
+                                animatedBorderColor.copy(alpha = 0.90f),
+                                primaryAccent.copy(alpha = 0.68f),
+                                tertiaryAccent.copy(alpha = 0.52f)
+                            )
+                        } else {
+                            listOf(
+                                primaryAccent.copy(alpha = if (breathingGlow) breathAlpha + 0.25f else 0.48f),
+                                tertiaryAccent.copy(alpha = 0.42f),
+                                emeraldAccent.copy(alpha = 0.28f)
+                            )
+                        }
                     ),
                     shape = shape
                 )
@@ -538,19 +613,18 @@ fun GlassCard(
 
         AppThemeStyle.CATPPUCCIN_MOCHA -> {
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (isDark) 10.dp else 7.dp,
-                    shape = shape,
-                    ambientColor = tertiaryAccent.copy(alpha = 0.16f),
-                    spotColor = primaryAccent.copy(alpha = 0.14f)
+                    ambient = tertiaryAccent.copy(alpha = 0.16f),
+                    spot = primaryAccent.copy(alpha = 0.14f)
                 )
                 .clip(shape)
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            surfaceVar.copy(alpha = surfaceAlphaOverride ?: 0.92f),
-                            effectiveBackground.copy(alpha = surfaceAlphaOverride ?: 0.90f),
-                            surfaceElev.copy(alpha = surfaceAlphaOverride ?: 0.94f)
+                            surfaceVar.copy(alpha = stackSurfaceAlpha),
+                            animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                            surfaceElev.copy(alpha = stackSurfaceAlpha)
                         )
                     )
                 )
@@ -559,7 +633,7 @@ fun GlassCard(
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                amberAccent.copy(alpha = if (isDark) 0.07f else 0.05f),
+                                amberAccent.copy(alpha = if (isDark) 0.06f else 0.04f),
                                 Color.Transparent
                             ),
                             center = Offset(size.width * 0.9f, 0f),
@@ -570,13 +644,26 @@ fun GlassCard(
                     )
                 }
                 .border(
-                    width = if (breathingGlow) 1.3.dp else borderWidth,
+                    width = if (isStackCard) borderWidth else if (breathingGlow) 1.3.dp else borderWidth,
                     brush = Brush.linearGradient(
-                        colors = listOf(
-                            tertiaryAccent.copy(alpha = if (breathingGlow) breathAlpha + 0.20f else 0.42f),
-                            primaryAccent.copy(alpha = 0.32f),
-                            amberAccent.copy(alpha = 0.25f)
-                        )
+                        colors = if (isStackCard && !hasExplicitAccentBorder) {
+                            listOf(
+                                tertiaryAccent.copy(alpha = 0.24f),
+                                primaryAccent.copy(alpha = 0.20f)
+                            )
+                        } else if (hasExplicitAccentBorder) {
+                            listOf(
+                                animatedBorderColor.copy(alpha = 0.88f),
+                                tertiaryAccent.copy(alpha = 0.55f),
+                                amberAccent.copy(alpha = 0.40f)
+                            )
+                        } else {
+                            listOf(
+                                tertiaryAccent.copy(alpha = if (breathingGlow) breathAlpha + 0.20f else 0.42f),
+                                primaryAccent.copy(alpha = 0.32f),
+                                amberAccent.copy(alpha = 0.25f)
+                            )
+                        }
                     ),
                     shape = shape
                 )
@@ -585,19 +672,18 @@ fun GlassCard(
         AppThemeStyle.SYNTHWAVE_84 -> {
             val shift = (cos(animPhase) + 1f) * 0.5f
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (isDark) 18.dp else 9.dp,
-                    shape = shape,
-                    ambientColor = secondaryGlow.copy(alpha = 0.30f),
-                    spotColor = primaryAccent.copy(alpha = 0.28f)
+                    ambient = secondaryGlow.copy(alpha = 0.30f),
+                    spot = primaryAccent.copy(alpha = 0.28f)
                 )
                 .clip(shape)
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            effectiveBackground.copy(alpha = surfaceAlphaOverride ?: 0.90f),
-                            surfaceVar.copy(alpha = surfaceAlphaOverride ?: 0.88f),
-                            secondaryGlow.copy(alpha = if (isDark) 0.14f else 0.06f)
+                            animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                            surfaceVar.copy(alpha = (stackSurfaceAlpha - 0.03f).coerceAtLeast(0.84f)),
+                            animatedBgColor.copy(alpha = stackSurfaceAlpha)
                         )
                     )
                 )
@@ -607,7 +693,7 @@ fun GlassCard(
                         brush = Brush.verticalGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                secondaryGlow.copy(alpha = if (isDark) 0.10f else 0.05f)
+                                secondaryGlow.copy(alpha = if (isDark) 0.09f else 0.045f)
                             ),
                             startY = size.height * 0.5f,
                             endY = size.height
@@ -615,13 +701,26 @@ fun GlassCard(
                     )
                 }
                 .border(
-                    width = 1.3.dp,
+                    width = if (isStackCard) borderWidth else 1.3.dp,
                     brush = Brush.linearGradient(
-                        colors = listOf(
-                            secondaryGlow.copy(alpha = 0.72f),
-                            primaryAccent.copy(alpha = 0.68f),
-                            amberAccent.copy(alpha = 0.45f)
-                        ),
+                        colors = if (isStackCard && !hasExplicitAccentBorder) {
+                            listOf(
+                                secondaryGlow.copy(alpha = 0.28f),
+                                primaryAccent.copy(alpha = 0.25f)
+                            )
+                        } else if (hasExplicitAccentBorder) {
+                            listOf(
+                                animatedBorderColor.copy(alpha = 0.90f),
+                                primaryAccent.copy(alpha = 0.72f),
+                                secondaryGlow.copy(alpha = 0.65f)
+                            )
+                        } else {
+                            listOf(
+                                secondaryGlow.copy(alpha = 0.72f),
+                                primaryAccent.copy(alpha = 0.68f),
+                                amberAccent.copy(alpha = 0.45f)
+                            )
+                        },
                         start = Offset(shift * 380f, 0f),
                         end = Offset(620f - shift * 220f, 520f)
                     ),
@@ -631,29 +730,35 @@ fun GlassCard(
 
         AppThemeStyle.NORD -> {
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (isDark) 8.dp else 6.dp,
-                    shape = shape,
-                    ambientColor = primaryAccent.copy(alpha = 0.12f),
-                    spotColor = Color.Black.copy(alpha = if (isDark) 0.35f else 0.08f)
+                    ambient = primaryAccent.copy(alpha = 0.12f),
+                    spot = Color.Black.copy(alpha = if (isDark) 0.35f else 0.08f)
                 )
                 .clip(shape)
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            surfaceVar.copy(alpha = surfaceAlphaOverride ?: 0.94f),
-                            effectiveBackground.copy(alpha = surfaceAlphaOverride ?: 0.92f)
+                            surfaceVar.copy(alpha = stackSurfaceAlpha),
+                            animatedBgColor.copy(alpha = stackSurfaceAlpha)
                         )
                     )
                 )
                 .border(
-                    width = if (breathingGlow) 1.25.dp else 1.dp,
+                    width = if (isStackCard) borderWidth else if (breathingGlow) 1.25.dp else 1.dp,
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            topSpecular.copy(alpha = if (isDark) 0.45f else 0.85f),
-                            if (breathingGlow) animatedBorderColor.copy(alpha = breathAlpha + 0.18f)
-                            else palette.glassBorder
-                        )
+                        colors = if (hasExplicitAccentBorder) {
+                            listOf(
+                                animatedBorderColor.copy(alpha = 0.85f),
+                                topSpecular.copy(alpha = if (isDark) 0.45f else 0.85f),
+                                animatedBorderColor.copy(alpha = 0.50f)
+                            )
+                        } else {
+                            listOf(
+                                topSpecular.copy(alpha = if (isDark) 0.35f else 0.85f),
+                                palette.glassBorder
+                            )
+                        }
                     ),
                     shape = shape
                 )
@@ -661,19 +766,18 @@ fun GlassCard(
 
         AppThemeStyle.DRACULA_PRO -> {
             modifier
-                .shadow(
+                .optionalElevation(
                     elevation = if (isDark) 16.dp else 9.dp,
-                    shape = shape,
-                    ambientColor = primaryAccent.copy(alpha = 0.28f),
-                    spotColor = emeraldAccent.copy(alpha = 0.20f)
+                    ambient = primaryAccent.copy(alpha = 0.28f),
+                    spot = emeraldAccent.copy(alpha = 0.20f)
                 )
                 .clip(shape)
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            surfaceVar.copy(alpha = surfaceAlphaOverride ?: 0.92f),
-                            effectiveBackground.copy(alpha = surfaceAlphaOverride ?: 0.90f),
-                            surfaceElev.copy(alpha = surfaceAlphaOverride ?: 0.95f)
+                            surfaceVar.copy(alpha = stackSurfaceAlpha),
+                            animatedBgColor.copy(alpha = stackSurfaceAlpha),
+                            surfaceElev.copy(alpha = stackSurfaceAlpha)
                         )
                     )
                 )
@@ -682,9 +786,9 @@ fun GlassCard(
                     drawRect(
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                primaryAccent.copy(alpha = if (isDark) 0.07f else 0.04f),
+                                primaryAccent.copy(alpha = if (isDark) 0.06f else 0.035f),
                                 Color.Transparent,
-                                tertiaryAccent.copy(alpha = if (isDark) 0.06f else 0.04f)
+                                tertiaryAccent.copy(alpha = if (isDark) 0.05f else 0.035f)
                             ),
                             start = Offset.Zero,
                             end = Offset(size.width, size.height)
@@ -692,13 +796,26 @@ fun GlassCard(
                     )
                 }
                 .border(
-                    width = if (breathingGlow) 1.4.dp else borderWidth,
+                    width = if (isStackCard) borderWidth else if (breathingGlow) 1.4.dp else borderWidth,
                     brush = Brush.linearGradient(
-                        colors = listOf(
-                            primaryAccent.copy(alpha = if (breathingGlow) breathAlpha + 0.25f else 0.52f),
-                            secondaryGlow.copy(alpha = 0.36f),
-                            emeraldAccent.copy(alpha = 0.40f)
-                        )
+                        colors = if (isStackCard && !hasExplicitAccentBorder) {
+                            listOf(
+                                primaryAccent.copy(alpha = 0.28f),
+                                tertiaryAccent.copy(alpha = 0.22f)
+                            )
+                        } else if (hasExplicitAccentBorder) {
+                            listOf(
+                                animatedBorderColor.copy(alpha = 0.90f),
+                                primaryAccent.copy(alpha = 0.65f),
+                                secondaryGlow.copy(alpha = 0.45f)
+                            )
+                        } else {
+                            listOf(
+                                primaryAccent.copy(alpha = if (breathingGlow) breathAlpha + 0.25f else 0.52f),
+                                secondaryGlow.copy(alpha = 0.36f),
+                                emeraldAccent.copy(alpha = 0.40f)
+                            )
+                        }
                     ),
                     shape = shape
                 )

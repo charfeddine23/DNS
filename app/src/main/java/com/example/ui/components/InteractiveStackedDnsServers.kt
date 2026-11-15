@@ -81,6 +81,7 @@ import com.example.ui.theme.CrimsonPulse
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.OnAccentInk
 import com.example.ui.theme.StackCardBackSurface
 import com.example.ui.theme.StackCardFrontSurface
@@ -121,6 +122,9 @@ fun InteractiveStackedDnsServers(
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val isDarkTheme = LocalIsDarkTheme.current
+    val topShadowGlow = EmeraldMint
+    val stackCardShape = remember { RoundedCornerShape(24.dp) }
     val cardStridePx = with(density) { 78.dp.toPx() }
     val cardStepOffsetPx = with(density) { 14.dp.toPx() }
     val peelDropPx = with(density) { 104.dp.toPx() }
@@ -386,7 +390,8 @@ fun InteractiveStackedDnsServers(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(192.dp)
+                .height(198.dp)
+                .padding(horizontal = 2.dp)
                 .pointerInput(deckCount, cardStridePx) {
                     if (deckCount <= 1) return@pointerInput
                     awaitEachGesture {
@@ -502,9 +507,21 @@ fun InteractiveStackedDnsServers(
                                         scaleY = pose.scale
                                         alpha = pose.alpha
                                         rotationX = pose.rotationX
+                                        shape = stackCardShape
+                                        clip = true
                                         transformOrigin = TransformOrigin(0.5f, 0.28f)
-                                        cameraDistance = 18f * density.density
-                                        shadowElevation = pose.shadowElevationPx
+                                        cameraDistance = 22f * density.density
+                                        shadowElevation = if (isDarkTheme) pose.shadowElevationPx else pose.shadowElevationPx * 0.65f
+                                        ambientShadowColor = if (isTopFocused) {
+                                            topShadowGlow.copy(alpha = if (isDarkTheme) 0.45f else 0.28f)
+                                        } else {
+                                            Color.Black.copy(alpha = if (isDarkTheme) 0.55f else 0.18f)
+                                        }
+                                        spotShadowColor = if (isTopFocused) {
+                                            topShadowGlow.copy(alpha = if (isDarkTheme) 0.55f else 0.34f)
+                                        } else {
+                                            Color.Black.copy(alpha = if (isDarkTheme) 0.65f else 0.22f)
+                                        }
                                     }
                                 }
                             }
@@ -641,14 +658,15 @@ private fun StackedDnsCardItem(
 
     GlassCard(
         modifier = modifier
-            .height(124.dp)
+            .height(126.dp)
             .testTag(if (isTopCard) "stacked_top_card_${server.id}" else "stacked_card_${server.id}"),
-        cornerRadius = 20.dp,
+        cornerRadius = 24.dp,
         borderColor = cardBorderColor,
-        borderWidth = if (isTopCard) 1.7.dp else 1.dp,
+        borderWidth = if (isTopCard) 1.5.dp else 0.9.dp,
         backgroundColor = cardBackground,
         breathingGlow = isSettled,
-        surfaceAlphaOverride = 0.90f
+        surfaceAlphaOverride = 0.90f,
+        isStackCard = true
     ) {
         Box(
             modifier = Modifier
@@ -747,10 +765,10 @@ private fun StackedDnsCardItem(
                     // Latency Chip
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(latencyColor.copy(alpha = 0.15f))
-                            .border(1.dp, latencyColor.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 9.dp, vertical = 5.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(latencyColor.copy(alpha = 0.14f))
+                            .border(0.9.dp, latencyColor.copy(alpha = 0.42f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
                         Text(
                             text = if (server.latencyMs != null && server.latencyMs > 0) "${server.latencyMs} ms" else "-- ms",
