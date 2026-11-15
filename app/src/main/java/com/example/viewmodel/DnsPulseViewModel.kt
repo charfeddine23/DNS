@@ -6,10 +6,12 @@ import android.net.VpnService
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
+import com.example.data.model.DnsAnalyticsSnapshot
 import com.example.data.model.DnsEngineMode
 import com.example.data.model.DnsServerProfile
 import com.example.data.model.PrivateDnsPreset
 import com.example.data.preferences.PreferencesManager
+import com.example.data.repository.DnsAnalyticsRepository
 import com.example.data.repository.DnsPresetData
 import com.example.domain.usecase.BenchmarkDnsServersUseCase
 import com.example.service.DnsVpnService
@@ -56,12 +58,14 @@ data class HomeUiState(
     val themeStyle: AppThemeStyle = AppThemeStyle.CHROMATIC_FROSTED_LIQUID,
     val appearanceMode: AppAppearanceMode = AppAppearanceMode.DARK,
     val updateState: UpdateDownloadState = UpdateDownloadState.Idle,
-    val showUpdateDialog: Boolean = false
+    val showUpdateDialog: Boolean = false,
+    val analytics: DnsAnalyticsSnapshot = DnsAnalyticsSnapshot()
 )
 
 class DnsPulseViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = PreferencesManager(application)
+    private val analyticsRepository = DnsAnalyticsRepository.getInstance(application)
     private val benchmarkDnsServers = BenchmarkDnsServersUseCase()
     val shizukuBridge: ShizukuDnsBridgeService = ShizukuDnsBridgeService.getInstance(application)
 
@@ -76,8 +80,21 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         refreshSystemPrivateDnsState()
         observeVpnService()
         observeShizukuStatus()
+        observeAnalytics()
         loadPreferences()
         pingAllServers()
+    }
+
+    private fun observeAnalytics() {
+        viewModelScope.launch {
+            analyticsRepository.analyticsFlow.collect { snapshot ->
+                _uiState.update { it.copy(analytics = snapshot) }
+            }
+        }
+    }
+
+    fun resetAnalytics() {
+        analyticsRepository.resetAnalytics()
     }
 
     private fun loadPreferences() {

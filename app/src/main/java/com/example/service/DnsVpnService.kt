@@ -19,6 +19,7 @@ import android.system.StructPollfd
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
+import com.example.data.repository.DnsAnalyticsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +54,9 @@ class DnsVpnService : VpnService() {
     private val dnsForwardDispatcher = Dispatchers.IO.limitedParallelism(16)
     private var tunnelJob: Job? = null
     private val outWriteLock = Any()
+    private val analyticsRepo: DnsAnalyticsRepository by lazy {
+        DnsAnalyticsRepository.getInstance(applicationContext)
+    }
 
     data class PersistedVpnConfig(
         val serverName: String,
@@ -585,7 +589,12 @@ class DnsVpnService : VpnService() {
 
         val dnsQuery = packet.copyOfRange(udpPayloadOffset, length)
         serviceScope.launch(dnsForwardDispatcher) {
+            val startedAtMs = SystemClock.elapsedRealtime()
             val responseData = forwardDnsUdp(dnsQuery, dstIp, fallbackIpv4Dns) ?: return@launch
+            val rttMs = (SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0L)
+            DnsWireParser.analyzeTransaction(dnsQuery, responseData)?.let { analysis ->
+                analyticsRepo.recordQuery(analysis, rttMs)
+            }
             val responsePacket = DnsPacketBuilder.buildIpv4UdpResponse(
                 clientIp = srcIp,
                 clientPort = srcPort,
@@ -620,7 +629,12 @@ class DnsVpnService : VpnService() {
 
         val dnsQuery = packet.copyOfRange(48, length)
         serviceScope.launch(dnsForwardDispatcher) {
+            val startedAtMs = SystemClock.elapsedRealtime()
             val responseData = forwardDnsUdp(dnsQuery, dstIp, fallbackIpv4Dns) ?: return@launch
+            val rttMs = (SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0L)
+            DnsWireParser.analyzeTransaction(dnsQuery, responseData)?.let { analysis ->
+                analyticsRepo.recordQuery(analysis, rttMs)
+            }
             val responsePacket = DnsPacketBuilder.buildIpv6UdpResponse(
                 clientIp = srcIp,
                 clientPort = srcPort,
@@ -709,6 +723,9 @@ class DnsVpnService : VpnService() {
         if (activeInstance === this) {
             activeInstance = null
         }
+        try {
+            analyticsRepo.flushNow()
+        } catch (_: Exception) {}
         disconnectVpn()
         serviceScope.cancel()
         super.onDestroy()

@@ -51,9 +51,11 @@ import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
@@ -92,6 +94,7 @@ import com.example.data.model.DnsEngineMode
 import com.example.ui.components.BreathingAtmosphere
 import com.example.ui.components.GlassCard
 import com.example.ui.components.UpdateDialog
+import com.example.ui.screens.AnalyticsScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ServersScreen
 import com.example.ui.screens.SettingsScreen
@@ -223,7 +226,7 @@ class MainActivity : ComponentActivity() {
                     controller.isAppearanceLightNavigationBars = !isDarkTheme
                 }
                 val snackbarHostState = remember { SnackbarHostState() }
-                val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
+                val pagerState = rememberPagerState(initialPage = 0, pageCount = { 4 })
                 val coroutineScope = rememberCoroutineScope()
                 var pendingApkInstall by remember { mutableStateOf<File?>(null) }
 
@@ -416,7 +419,12 @@ class MainActivity : ComponentActivity() {
                                             uiState = uiState,
                                             viewModel = viewModel
                                         )
-                                        2 -> SettingsScreen(
+                                        2 -> AnalyticsScreen(
+                                            uiState = uiState,
+                                            viewModel = viewModel,
+                                            onNavigateToShield = { slideToPage(0) }
+                                        )
+                                        3 -> SettingsScreen(
                                             uiState = uiState,
                                             viewModel = viewModel,
                                             onLaunchWirelessSettings = {
@@ -440,7 +448,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .windowInsetsPadding(stableNavInsets)
-                                    .padding(horizontal = 20.dp, vertical = 14.dp)
+                                    .padding(horizontal = 14.dp, vertical = 14.dp)
                             )
                         }
                     }
@@ -483,7 +491,8 @@ private fun FloatingPulseNavBar(
         listOf(
             NavTabSpec(0, "Shield", Icons.Filled.Home, Icons.Outlined.Home, "nav_item_home", "Shield"),
             NavTabSpec(1, "Benchmark", Icons.Filled.Dns, Icons.Outlined.Dns, "nav_item_servers", "Benchmark"),
-            NavTabSpec(2, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "nav_item_settings", "Settings")
+            NavTabSpec(2, "Analytics", Icons.Filled.Analytics, Icons.Outlined.Analytics, "nav_item_analytics", "Analytics"),
+            NavTabSpec(3, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "nav_item_settings", "Settings")
         )
     }
 
@@ -511,7 +520,7 @@ private fun FloatingPulseNavBar(
     GlassCard(
         modifier = modifier
             .fillMaxWidth()
-            .widthIn(max = 460.dp)
+            .widthIn(max = 500.dp)
             .height(66.dp)
             .testTag("main_bottom_nav"),
         cornerRadius = 28.dp,
@@ -602,7 +611,9 @@ private fun FloatingPulseNavBar(
                         Text(
                             text = tab.label,
                             color = if (isSelected) TextPrimary else TextSecondary,
-                            fontSize = 10.5.sp,
+                            fontSize = 9.5.sp,
+                            maxLines = 1,
+                            softWrap = false,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
