@@ -125,7 +125,7 @@ fun InteractiveStackedDnsServers(
     val isDarkTheme = LocalIsDarkTheme.current
     val topShadowGlow = EmeraldMint
     val stackCardShape = remember { RoundedCornerShape(24.dp) }
-    val cardStridePx = with(density) { 78.dp.toPx() }
+    val cardStridePx = with(density) { 132.dp.toPx() }
     val cardStepOffsetPx = with(density) { 14.dp.toPx() }
     val peelDropPx = with(density) { 104.dp.toPx() }
 
@@ -201,10 +201,10 @@ fun InteractiveStackedDnsServers(
                 var handoffVelocity = initialVelocityCardsPerSec
                 val travelDistance = abs(targetSlot - deckPosition.value)
 
-                // Stage 1: Natural inertia coast for fast flicks across multiple cards
-                if (abs(initialVelocityCardsPerSec) > 2.1f && travelDistance >= 0.85f) {
+                // Stage 1: Controlled inertia coast only for fast intentional flicks
+                if (abs(initialVelocityCardsPerSec) > 2.6f && travelDistance >= 1.15f) {
                     val flickDirection = sign(initialVelocityCardsPerSec)
-                    val coastDecay = exponentialDecay<Float>(frictionMultiplier = 2.0f)
+                    val coastDecay = exponentialDecay<Float>(frictionMultiplier = 4.2f)
                     val decayJob = launch {
                         deckPosition.animateDecay(
                             initialVelocity = initialVelocityCardsPerSec,
@@ -217,7 +217,7 @@ fun InteractiveStackedDnsServers(
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
                             val remainingTowardTarget = (targetSlot - value) * flickDirection
-                            if (remainingTowardTarget <= 0.58f || abs(velocity) <= 1.6f) {
+                            if (remainingTowardTarget <= 0.52f || abs(velocity) <= 1.8f) {
                                 cancel()
                             }
                         }
@@ -230,8 +230,8 @@ fun InteractiveStackedDnsServers(
                     targetValue = targetSlot,
                     initialVelocity = handoffVelocity,
                     animationSpec = spring(
-                        dampingRatio = 0.78f,
-                        stiffness = 340f
+                        dampingRatio = 0.84f,
+                        stiffness = 300f
                     )
                 ) {
                     val detent = value.roundToInt()
@@ -406,7 +406,7 @@ fun InteractiveStackedDnsServers(
                             directDragPosition = liveDeckPos
                             isDraggingDirect = true
                             velocityTracker.addPosition(change.uptimeMillis, change.position)
-                            liveDeckPos += (overSlop / cardStridePx)
+                            liveDeckPos += (overSlop / cardStridePx) * 0.45f
                             directDragPosition = liveDeckPos
                             val detent = liveDeckPos.roundToInt()
                             if (detent != lastDetentSlot) {
@@ -432,10 +432,10 @@ fun InteractiveStackedDnsServers(
                             }
 
                             val velocityPxPerSec = velocityTracker.calculateVelocity().y
-                            val velocityCardsPerSec = (velocityPxPerSec / cardStridePx).coerceIn(-18f, 18f)
+                            val velocityCardsPerSec = ((velocityPxPerSec / cardStridePx) * 0.58f).coerceIn(-6.5f, 6.5f)
 
                             if (completed) {
-                                val decay = exponentialDecay<Float>(frictionMultiplier = 2.0f)
+                                val decay = exponentialDecay<Float>(frictionMultiplier = 4.2f)
                                 val projectedEnd = decay.calculateTargetValue(
                                     typeConverter = Float.VectorConverter,
                                     initialValue = liveDeckPos,
