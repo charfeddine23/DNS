@@ -18,11 +18,15 @@
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
-    <!-- Discover launchable user & system apps for Fingerprint App Authenticator -->
+    <!-- Discover launchable user & system apps and Home launcher for Fingerprint App Authenticator -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
         </intent>
     </queries>
 
@@ -113,7 +117,6 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"
-            android:noHistory="true"
             android:theme="@style/Theme.MyApplication" />
 
         <!-- Instant foreground detection for apps protected by Fingerprint Authenticator -->

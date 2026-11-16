@@ -121,7 +121,7 @@ class AppLockActivity : FragmentActivity() {
                     allowDeviceCredential = config.allowDeviceCredentialFallback,
                     onSuccess = {
                         authRepo.markAppUnlocked(currentPkg)
-                        finish()
+                        finishWithoutFlicker()
                     },
                     onErrorOrCancelled = { msg ->
                         errorText = msg
@@ -131,6 +131,7 @@ class AppLockActivity : FragmentActivity() {
 
             LaunchedEffect(currentPkg) {
                 if (currentPkg.isNotBlank()) {
+                    authRepo.setLockPromptActive(currentPkg)
                     triggerPrompt()
                 }
             }
@@ -156,10 +157,27 @@ class AppLockActivity : FragmentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (targetPackageState.isNotBlank()) {
+            authRepo.setLockPromptActive(targetPackageState)
+        }
+    }
+
+    override fun onDestroy() {
+        if (targetPackageState.isNotBlank()) {
+            authRepo.clearLockPromptActive(targetPackageState)
+        }
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         readExtras(intent)
+        if (targetPackageState.isNotBlank()) {
+            authRepo.setLockPromptActive(targetPackageState)
+        }
     }
 
     private fun readExtras(intent: Intent?) {
@@ -168,13 +186,20 @@ class AppLockActivity : FragmentActivity() {
         targetAppNameState = intent?.getStringExtra(EXTRA_TARGET_APP_NAME).orEmpty().ifBlank { pkg }
     }
 
+    private fun finishWithoutFlicker() {
+        finish()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+    }
+
     private fun exitToHomeLauncher() {
+        authRepo.clearLockPromptActive(targetPackageState.takeIf { it.isNotBlank() })
         val homeIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
         startActivity(homeIntent)
-        finish()
+        finishWithoutFlicker()
     }
 
     companion object {

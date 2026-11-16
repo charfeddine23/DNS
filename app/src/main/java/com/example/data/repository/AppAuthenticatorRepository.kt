@@ -37,6 +37,14 @@ class AppAuthenticatorRepository private constructor(
     private val unlockedUntilMs = ConcurrentHashMap<String, Long>()
     @Volatile
     private var activeForegroundUnlockedPkg: String? = null
+    @Volatile
+    private var activeLockPromptPkg: String? = null
+    @Volatile
+    private var activeLockPromptAtMs: Long = 0L
+    @Volatile
+    private var lastUnlockedPkg: String? = null
+    @Volatile
+    private var lastUnlockedAtMs: Long = 0L
 
     private val _configFlow = MutableStateFlow(AppAuthenticatorConfig())
     val configFlow: StateFlow<AppAuthenticatorConfig> = _configFlow.asStateFlow()
@@ -52,6 +60,8 @@ class AppAuthenticatorRepository private constructor(
             if (!enabled) {
                 unlockedUntilMs.clear()
                 activeForegroundUnlockedPkg = null
+                activeLockPromptPkg = null
+                lastUnlockedPkg = null
             }
             prefs.edit().putBoolean(KEY_MASTER_GUARD, enabled).apply()
             snapshot = buildConfigLocked()
@@ -69,6 +79,12 @@ class AppAuthenticatorRepository private constructor(
                 unlockedUntilMs.remove(packageName)
                 if (activeForegroundUnlockedPkg == packageName) {
                     activeForegroundUnlockedPkg = null
+                }
+                if (activeLockPromptPkg == packageName) {
+                    activeLockPromptPkg = null
+                }
+                if (lastUnlockedPkg == packageName) {
+                    lastUnlockedPkg = null
                 }
             }
             prefs.edit().putStringSet(KEY_PROTECTED_PACKAGES, protectedPackages.toSet()).apply()
@@ -97,18 +113,52 @@ class AppAuthenticatorRepository private constructor(
         _configFlow.value = snapshot
     }
 
+    fun isPackageProtected(packageName: String): Boolean {
+        synchronized(lock) {
+            return isMasterGuardEnabled && packageName in protectedPackages
+        }
+    }
+
+    fun setLockPromptActive(packageName: String, nowMs: Long = System.currentTimeMillis()) {
+        synchronized(lock) {
+            activeLockPromptPkg = packageName
+            activeLockPromptAtMs = nowMs
+        }
+    }
+
+    fun clearLockPromptActive(packageName: String? = null) {
+        synchronized(lock) {
+            if (packageName == null || activeLockPromptPkg == packageName) {
+                activeLockPromptPkg = null
+                activeLockPromptAtMs = 0L
+            }
+        }
+    }
+
     fun shouldPromptLock(packageName: String, nowMs: Long = System.currentTimeMillis()): Boolean {
         synchronized(lock) {
             if (!isMasterGuardEnabled) return false
             if (packageName !in protectedPackages) {
-                // Leaving a protected app clears instant-relock grace if another real app takes foreground
-                if (activeForegroundUnlockedPkg != null && activeForegroundUnlockedPkg != packageName) {
-                    activeForegroundUnlockedPkg = null
-                }
+                return false
+            }
+
+            // Do not stack or re-trigger lock prompts while this app's prompt screen is already active
+            if (activeLockPromptPkg == packageName &&
+                (nowMs - activeLockPromptAtMs) in 0L..LOCK_PROMPT_STALE_MS
+            ) {
                 return false
             }
 
             if (activeForegroundUnlockedPkg == packageName) {
+                return false
+            }
+
+            // Guard against instant-relock re-triggering during AppLockActivity/BiometricPrompt close transition
+            if (relockTimeoutSeconds == 0 &&
+                lastUnlockedPkg == packageName &&
+                (nowMs - lastUnlockedAtMs) in 0L..POST_UNLOCK_SETTLE_MS
+            ) {
+                activeForegroundUnlockedPkg = packageName
                 return false
             }
 
@@ -121,14 +171,38 @@ class AppAuthenticatorRepository private constructor(
         }
     }
 
-    fun onNonProtectedAppForegrounded(packageName: String) {
+    fun onNonProtectedAppForegrounded(
+        packageName: String,
+        nowMs: Long = System.currentTimeMillis(),
+        forceOwnApp: Boolean = false
+    ) {
         synchronized(lock) {
-            if (packageName != appContext.packageName && activeForegroundUnlockedPkg != null) {
+            if (!forceOwnApp && packageName == appContext.packageName) return
+            if (packageName in protectedPackages) return
+
+            // Ignore window state churn right after a fingerprint unlock while AppLockActivity finishes back to the app
+            val activePkg = activeForegroundUnlockedPkg
+            if (activePkg != null &&
+                relockTimeoutSeconds == 0 &&
+                lastUnlockedPkg == activePkg &&
+                (nowMs - lastUnlockedAtMs) in 0L until POST_UNLOCK_SETTLE_MS
+            ) {
+                return
+            }
+
+            if (activePkg != null) {
                 if (relockTimeoutSeconds == 0) {
-                    unlockedUntilMs.remove(activeForegroundUnlockedPkg)
+                    unlockedUntilMs.remove(activePkg)
                 }
                 activeForegroundUnlockedPkg = null
             }
+            if (relockTimeoutSeconds == 0 &&
+                lastUnlockedPkg != null &&
+                (nowMs - lastUnlockedAtMs) >= POST_UNLOCK_SETTLE_MS
+            ) {
+                lastUnlockedPkg = null
+            }
+            activeLockPromptPkg = null
         }
     }
 
@@ -136,6 +210,12 @@ class AppAuthenticatorRepository private constructor(
         val snapshot: AppAuthenticatorConfig
         synchronized(lock) {
             activeForegroundUnlockedPkg = packageName
+            lastUnlockedPkg = packageName
+            lastUnlockedAtMs = nowMs
+            if (activeLockPromptPkg == packageName) {
+                activeLockPromptPkg = null
+                activeLockPromptAtMs = 0L
+            }
             if (relockTimeoutSeconds > 0) {
                 unlockedUntilMs[packageName] = nowMs + relockTimeoutSeconds * 1000L
             } else {
@@ -159,8 +239,14 @@ class AppAuthenticatorRepository private constructor(
     }
 
     fun clearUnlockSessions() {
-        unlockedUntilMs.clear()
-        activeForegroundUnlockedPkg = null
+        synchronized(lock) {
+            unlockedUntilMs.clear()
+            activeForegroundUnlockedPkg = null
+            activeLockPromptPkg = null
+            activeLockPromptAtMs = 0L
+            lastUnlockedPkg = null
+            lastUnlockedAtMs = 0L
+        }
     }
 
     suspend fun loadLaunchableApps(context: Context): List<InstalledAppItem> = withContext(Dispatchers.IO) {
@@ -236,6 +322,8 @@ class AppAuthenticatorRepository private constructor(
         private const val KEY_ALLOW_CREDENTIAL_FALLBACK = "key_allow_credential_fallback"
         private const val KEY_TOTAL_UNLOCKS = "key_total_unlocks"
         private const val KEY_TOTAL_INTERCEPTIONS = "key_total_interceptions"
+        internal const val POST_UNLOCK_SETTLE_MS = 1_500L
+        internal const val LOCK_PROMPT_STALE_MS = 20_000L
 
         @Volatile
         private var instance: AppAuthenticatorRepository? = null

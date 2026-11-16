@@ -37,7 +37,6 @@ class AppAuthenticatorRepositoryTest {
 
         repo.toggleAppLock(whatsapp, true)
         assertTrue(whatsapp in repo.configFlow.value.protectedPackages)
-        // Still false until master guard is enabled
         assertFalse(repo.shouldPromptLock(whatsapp))
 
         repo.setMasterGuardEnabled(true)
@@ -66,16 +65,16 @@ class AppAuthenticatorRepositoryTest {
         assertFalse(repo.shouldPromptLock(bankApp, nowMs = startMs + 5_000L))
 
         // Switch away to another app and come back within 30s grace window -> still unlocked
-        repo.onNonProtectedAppForegrounded("com.android.launcher3")
+        repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = startMs + 10_000L)
         assertFalse(repo.shouldPromptLock(bankApp, nowMs = startMs + 20_000L))
 
         // Leave again and return after 31s -> prompts again
-        repo.onNonProtectedAppForegrounded("com.android.launcher3")
+        repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = startMs + 25_000L)
         assertTrue(repo.shouldPromptLock(bankApp, nowMs = startMs + 31_000L))
     }
 
     @Test
-    fun `instant relock re-engages immediately after leaving protected app`() {
+    fun `instant relock stays unlocked inside app and only re-prompts after leaving and re-entering`() {
         val repo = AppAuthenticatorRepository.createIsolatedForTesting(context)
         val gallery = "com.google.android.apps.photos"
         repo.toggleAppLock(gallery, true)
@@ -85,12 +84,26 @@ class AppAuthenticatorRepositoryTest {
         val now = 1_760_000_100_000L
         assertTrue(repo.shouldPromptLock(gallery, nowMs = now))
 
-        repo.markAppUnlocked(gallery, nowMs = now)
-        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 100L))
+        // Simulate active prompt preventing duplicate stacked prompts while scanning fingerprint
+        repo.setLockPromptActive(gallery, nowMs = now)
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 500L))
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 1_200L))
 
-        // Switching to another app invalidates instant session immediately
-        repo.onNonProtectedAppForegrounded("com.android.chrome")
-        assertTrue(repo.shouldPromptLock(gallery, nowMs = now + 200L))
+        // User unlocks via fingerprint
+        repo.markAppUnlocked(gallery, nowMs = now + 1_400L)
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 1_500L))
+
+        // Transient exit flicker right during AppLockActivity/BiometricPrompt close does NOT revoke unlock
+        repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = now + 1_800L)
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 2_000L))
+
+        // Repeated in-app window state events keep the app unlocked with zero extra prompts
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 30_000L))
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 120_000L))
+
+        // User genuinely exits to Home launcher or another app -> re-locks immediately for next entry
+        repo.onNonProtectedAppForegrounded("com.android.chrome", nowMs = now + 125_000L)
+        assertTrue(repo.shouldPromptLock(gallery, nowMs = now + 125_500L))
     }
 
     @Test
