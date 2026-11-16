@@ -127,4 +127,57 @@ class AppAuthenticatorRepositoryTest {
         assertEquals(2L, config.totalInterceptionCount)
         assertEquals(1L, config.totalUnlockCount)
     }
+
+    @Test
+    fun `per-app relock timeouts operate independently and persist across instances`() {
+        val repo = AppAuthenticatorRepository.createIsolatedForTesting(context)
+        val whatsapp = "com.whatsapp"
+        val telegram = "org.telegram.messenger"
+        val notes = "com.example.notes"
+
+        repo.setMasterGuardEnabled(true)
+        repo.setRelockTimeoutSeconds(30) // Global fallback
+        repo.toggleAppLock(whatsapp, true)
+        repo.toggleAppLock(telegram, true)
+        repo.toggleAppLock(notes, true)
+
+        // Customize WhatsApp = Instant (0s), Telegram = 60s, Notes uses fallback (30s)
+        repo.setAppRelockTimeoutSeconds(whatsapp, 0)
+        repo.setAppRelockTimeoutSeconds(telegram, 60)
+
+        assertEquals(0, repo.getEffectiveRelockTimeoutSeconds(whatsapp))
+        assertEquals(60, repo.getEffectiveRelockTimeoutSeconds(telegram))
+        assertEquals(30, repo.getEffectiveRelockTimeoutSeconds(notes))
+
+        val startMs = 1_760_000_200_000L
+        assertTrue(repo.shouldPromptLock(whatsapp, nowMs = startMs))
+        assertTrue(repo.shouldPromptLock(telegram, nowMs = startMs))
+
+        // Unlock WhatsApp (0s) and Telegram (60s)
+        repo.markAppUnlocked(whatsapp, nowMs = startMs)
+        repo.markAppUnlocked(telegram, nowMs = startMs + 5_000L)
+
+        // Exit to launcher after settle window
+        repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = startMs + 10_000L)
+
+        // WhatsApp (Instant 0s) must re-lock immediately, while Telegram (60s) stays unlocked
+        assertTrue(repo.shouldPromptLock(whatsapp, nowMs = startMs + 15_000L))
+        assertFalse(repo.shouldPromptLock(telegram, nowMs = startMs + 15_000L))
+
+        // Notes (fallback 30s) was never unlocked -> prompts; after unlock, stays unlocked for 30s
+        assertTrue(repo.shouldPromptLock(notes, nowMs = startMs + 15_000L))
+        repo.markAppUnlocked(notes, nowMs = startMs + 15_000L)
+        repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = startMs + 20_000L)
+        assertFalse(repo.shouldPromptLock(notes, nowMs = startMs + 35_000L))
+        // Leave again and return after the 30s grace window expires -> prompts again
+        repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = startMs + 40_000L)
+        assertTrue(repo.shouldPromptLock(notes, nowMs = startMs + 46_000L))
+
+        // Persistence check
+        val reloaded = AppAuthenticatorRepository.createIsolatedForTesting(context)
+        assertEquals(0, reloaded.getEffectiveRelockTimeoutSeconds(whatsapp))
+        assertEquals(60, reloaded.getEffectiveRelockTimeoutSeconds(telegram))
+        assertEquals(30, reloaded.getEffectiveRelockTimeoutSeconds(notes))
+        assertEquals(mapOf(whatsapp to 0, telegram to 60), reloaded.configFlow.value.appRelockTimeouts)
+    }
 }

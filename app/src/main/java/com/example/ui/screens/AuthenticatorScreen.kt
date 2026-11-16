@@ -60,6 +60,7 @@ import com.example.data.model.AppFilterTab
 import com.example.data.model.BiometricHardwareStatus
 import com.example.ui.components.AccessibilityGuardBannerCard
 import com.example.ui.components.AppLockRowCard
+import com.example.ui.components.AppRelockDelayBottomSheet
 import com.example.ui.components.AuthenticatorHeroGuardCard
 import com.example.ui.components.GlassCard
 import com.example.ui.theme.ElectricCyan
@@ -83,6 +84,7 @@ fun AuthenticatorScreen(
     val activity = context as? FragmentActivity
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedFilter by rememberSaveable { mutableStateOf(AppFilterTab.ALL) }
+    var delaySheetTargetPkg by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshAuthenticatorEnvironment()
@@ -216,7 +218,6 @@ fun AuthenticatorScreen(
             item {
                 AuthenticatorHeroGuardCard(
                     config = uiState.authConfig,
-                    biometricStatus = uiState.biometricStatus,
                     onToggleMasterGuard = { enabled ->
                         if (!enabled &&
                             uiState.isAccessibilityGuardActive &&
@@ -227,18 +228,6 @@ fun AuthenticatorScreen(
                             }
                         } else {
                             viewModel.setMasterAppGuardEnabled(enabled)
-                        }
-                    },
-                    onSelectRelockDelay = { seconds ->
-                        viewModel.setRelockTimeoutSeconds(seconds)
-                    },
-                    onEnrollBiometric = {
-                        runCatching {
-                            context.startActivity(BiometricHelper.buildEnrollFingerprintIntent())
-                        }.onFailure {
-                            runCatching {
-                                context.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
-                            }
                         }
                     }
                 )
@@ -395,8 +384,11 @@ fun AuthenticatorScreen(
                 }
             } else {
                 items(filteredApps, key = { it.packageName }) { app ->
+                    val effectiveTimeout =
+                        app.customRelockTimeoutSeconds ?: uiState.authConfig.relockTimeoutSeconds
                     AppLockRowCard(
                         item = app,
+                        effectiveTimeoutSeconds = effectiveTimeout,
                         onToggle = { enableLock ->
                             if (!enableLock &&
                                 uiState.authConfig.isMasterGuardEnabled &&
@@ -411,10 +403,50 @@ fun AuthenticatorScreen(
                             } else {
                                 viewModel.toggleAppFingerprintLock(app.packageName, enableLock)
                             }
+                        },
+                        onLongPress = {
+                            delaySheetTargetPkg = app.packageName
                         }
                     )
                 }
             }
+        }
+
+        val delaySheetTargetApp = remember(delaySheetTargetPkg, uiState.installedApps) {
+            delaySheetTargetPkg?.let { targetPkg ->
+                uiState.installedApps.firstOrNull { it.packageName == targetPkg }
+            }
+        }
+        if (delaySheetTargetApp != null) {
+            val effectiveDelay =
+                delaySheetTargetApp.customRelockTimeoutSeconds
+                    ?: uiState.authConfig.relockTimeoutSeconds
+            AppRelockDelayBottomSheet(
+                item = delaySheetTargetApp,
+                effectiveTimeoutSeconds = effectiveDelay,
+                onToggleLock = { enableLock ->
+                    if (!enableLock &&
+                        uiState.authConfig.isMasterGuardEnabled &&
+                        uiState.isAccessibilityGuardActive &&
+                        uiState.biometricStatus == BiometricHardwareStatus.READY
+                    ) {
+                        launchFingerprintVerification(
+                            context.getString(
+                                R.string.auth_prompt_subtitle,
+                                delaySheetTargetApp.appName
+                            )
+                        ) {
+                            viewModel.toggleAppFingerprintLock(delaySheetTargetApp.packageName, false)
+                        }
+                    } else {
+                        viewModel.toggleAppFingerprintLock(delaySheetTargetApp.packageName, enableLock)
+                    }
+                },
+                onSelectDelay = { seconds ->
+                    viewModel.setAppRelockTimeoutSeconds(delaySheetTargetApp.packageName, seconds)
+                },
+                onDismiss = { delaySheetTargetPkg = null }
+            )
         }
     }
 }

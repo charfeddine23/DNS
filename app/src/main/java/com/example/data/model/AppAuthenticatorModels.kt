@@ -18,7 +18,8 @@ data class InstalledAppItem(
     val packageName: String,
     val appName: String,
     val isSystemApp: Boolean,
-    val isLocked: Boolean
+    val isLocked: Boolean,
+    val customRelockTimeoutSeconds: Int? = null
 )
 
 data class AppAuthenticatorConfig(
@@ -26,6 +27,7 @@ data class AppAuthenticatorConfig(
     val relockTimeoutSeconds: Int = 30,
     val allowDeviceCredentialFallback: Boolean = true,
     val protectedPackages: Set<String> = emptySet(),
+    val appRelockTimeouts: Map<String, Int> = emptyMap(),
     val totalUnlockCount: Long = 0L,
     val totalInterceptionCount: Long = 0L
 )

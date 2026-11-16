@@ -6,10 +6,12 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -20,29 +22,40 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,21 +63,22 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.example.R
 import com.example.data.model.AppAuthenticatorConfig
-import com.example.data.model.BiometricHardwareStatus
 import com.example.data.model.InstalledAppItem
 import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.CrimsonPulse
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
@@ -95,12 +109,20 @@ private object AppIconBitmapCache {
 }
 
 @Composable
+fun formatRelockDelayLabel(seconds: Int): String = when (seconds) {
+    0 -> stringResource(R.string.auth_relock_instant)
+    15 -> stringResource(R.string.auth_relock_15s)
+    30 -> stringResource(R.string.auth_relock_30s)
+    60 -> stringResource(R.string.auth_relock_1m)
+    300 -> stringResource(R.string.auth_relock_5m)
+    900 -> stringResource(R.string.auth_relock_15m)
+    else -> stringResource(R.string.auth_relock_custom_fmt, seconds)
+}
+
+@Composable
 fun AuthenticatorHeroGuardCard(
     config: AppAuthenticatorConfig,
-    biometricStatus: BiometricHardwareStatus,
     onToggleMasterGuard: (Boolean) -> Unit,
-    onSelectRelockDelay: (Int) -> Unit,
-    onEnrollBiometric: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val simpleMode = LocalSimpleMode.current
@@ -211,117 +233,30 @@ fun AuthenticatorHeroGuardCard(
                 )
             }
 
-            // Biometric hardware readiness strip
-            val hwColor = when (biometricStatus) {
-                BiometricHardwareStatus.READY -> EmeraldMint
-                BiometricHardwareStatus.NO_ENROLLED_BIOMETRICS -> AmberWarning
-                BiometricHardwareStatus.NO_HARDWARE,
-                BiometricHardwareStatus.UNAVAILABLE -> CrimsonPulse
-            }
-            val hwLabel = when (biometricStatus) {
-                BiometricHardwareStatus.READY -> stringResource(R.string.auth_hw_ready)
-                BiometricHardwareStatus.NO_ENROLLED_BIOMETRICS -> stringResource(R.string.auth_hw_none_enrolled)
-                BiometricHardwareStatus.NO_HARDWARE,
-                BiometricHardwareStatus.UNAVAILABLE -> stringResource(R.string.auth_hw_unavailable)
-            }
-
+            // Long-press hint for per-app Re-lock Delay customization
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(hwColor.copy(alpha = 0.12f))
-                    .border(1.dp, hwColor.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+                    .background(ElectricCyan.copy(alpha = 0.09f))
+                    .border(1.dp, ElectricCyan.copy(alpha = 0.24f), RoundedCornerShape(12.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = if (biometricStatus == BiometricHardwareStatus.READY)
-                            Icons.Filled.CheckCircle else Icons.Filled.WarningAmber,
-                        contentDescription = null,
-                        tint = hwColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = hwLabel,
-                        color = hwColor,
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                if (biometricStatus == BiometricHardwareStatus.NO_ENROLLED_BIOMETRICS) {
-                    Text(
-                        text = stringResource(R.string.auth_enroll_btn),
-                        color = OnAccentInk,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(AmberWarning)
-                            .clickable(onClick = onEnrollBiometric)
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                            .testTag("auth_enroll_biometric_btn")
-                    )
-                }
-            }
-
-            // Re-lock timeout chips
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    imageVector = Icons.Filled.TouchApp,
+                    contentDescription = null,
+                    tint = ElectricCyan,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = stringResource(R.string.auth_relock_label),
-                    color = TextSecondary,
+                    text = stringResource(R.string.auth_long_press_hint),
+                    color = ElectricCyan,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.Medium
                 )
-                val options = listOf(
-                    0 to stringResource(R.string.auth_relock_instant),
-                    30 to stringResource(R.string.auth_relock_30s),
-                    60 to stringResource(R.string.auth_relock_1m),
-                    300 to stringResource(R.string.auth_relock_5m)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    options.forEach { (seconds, label) ->
-                        val selected = config.relockTimeoutSeconds == seconds
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (selected) ElectricCyan.copy(alpha = 0.20f) else SubtleSurfaceFill
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (selected) ElectricCyan else SubtleSurfaceBorder,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = ripple(color = ElectricCyan),
-                                    onClick = { onSelectRelockDelay(seconds) }
-                                )
-                                .testTag("auth_timeout_${seconds}s"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = label,
-                                color = if (selected) ElectricCyan else TextSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
             }
         }
     }
@@ -439,14 +374,18 @@ fun AccessibilityGuardBannerCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppLockRowCard(
     item: InstalledAppItem,
+    effectiveTimeoutSeconds: Int,
     onToggle: (Boolean) -> Unit,
+    onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val simpleMode = LocalSimpleMode.current
+    val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
@@ -506,10 +445,14 @@ fun AppLockRowCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(
+                .combinedClickable(
                     interactionSource = interactionSource,
                     indication = ripple(color = EmeraldMint),
-                    onClick = { onToggle(!item.isLocked) }
+                    onClick = { onToggle(!item.isLocked) },
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongPress()
+                    }
                 )
                 .padding(horizontal = 14.dp, vertical = 12.dp)
                 .testTag("auth_app_row_${item.packageName}"),
@@ -575,19 +518,59 @@ fun AppLockRowCard(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = if (item.isLocked)
-                        stringResource(R.string.auth_badge_locked)
-                    else
-                        item.packageName,
-                    color = if (item.isLocked) EmeraldMint else TextSecondary,
-                    fontSize = 10.5.sp,
-                    fontFamily = if (item.isLocked) FontFamily.Default else FontFamily.Monospace,
-                    fontWeight = if (item.isLocked) FontWeight.SemiBold else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = if (item.isLocked)
+                            stringResource(R.string.auth_badge_locked)
+                        else
+                            item.packageName,
+                        color = if (item.isLocked) EmeraldMint else TextSecondary,
+                        fontSize = 10.5.sp,
+                        fontFamily = if (item.isLocked) FontFamily.Default else FontFamily.Monospace,
+                        fontWeight = if (item.isLocked) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (item.isLocked || item.customRelockTimeoutSeconds != null) {
+                        val isCustom = item.customRelockTimeoutSeconds != null
+                        val delayColor = if (isCustom) ElectricCyan else TextSecondary
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    if (isCustom) ElectricCyan.copy(alpha = 0.14f) else SubtleSurfaceFill
+                                )
+                                .border(
+                                    width = 0.8.dp,
+                                    color = if (isCustom) ElectricCyan.copy(alpha = 0.45f) else SubtleSurfaceBorder,
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .testTag("auth_app_delay_badge_${item.packageName}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Timer,
+                                contentDescription = null,
+                                tint = delayColor,
+                                modifier = Modifier.size(10.dp)
+                            )
+                            Text(
+                                text = formatRelockDelayLabel(effectiveTimeoutSeconds),
+                                color = delayColor,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -606,3 +589,292 @@ fun AppLockRowCard(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppRelockDelayBottomSheet(
+    item: InstalledAppItem,
+    effectiveTimeoutSeconds: Int,
+    onToggleLock: (Boolean) -> Unit,
+    onSelectDelay: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val presetValues = remember { listOf(0, 15, 30, 60, 300, 900) }
+    var customInput by remember(item.packageName, effectiveTimeoutSeconds) {
+        mutableStateOf(
+            if (effectiveTimeoutSeconds !in presetValues) effectiveTimeoutSeconds.toString() else ""
+        )
+    }
+
+    val appBitmap by produceState<Bitmap?>(
+        initialValue = AppIconBitmapCache.get(item.packageName),
+        key1 = item.packageName
+    ) {
+        if (value == null) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    val bmp = context.packageManager
+                        .getApplicationIcon(item.packageName)
+                        .toBitmap(width = 96, height = 96)
+                    AppIconBitmapCache.put(item.packageName, bmp)
+                    bmp
+                }.getOrNull()
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = GlassSurface,
+        contentColor = TextPrimary,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+                .testTag("auth_app_delay_sheet"),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(SubtleSurfaceFill)
+                        .border(1.dp, ElectricCyan.copy(alpha = 0.4f), RoundedCornerShape(13.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val bmp = appBitmap
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = item.appName,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Timer,
+                            contentDescription = null,
+                            tint = ElectricCyan,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.auth_app_sheet_title, item.appName),
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = item.packageName,
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("auth_sheet_close_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.update_close_desc),
+                        tint = TextSecondary
+                    )
+                }
+            }
+
+            // Per-app lock toggle inside sheet
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(SubtleSurfaceFill)
+                    .border(
+                        width = 1.dp,
+                        color = if (item.isLocked) EmeraldMint.copy(alpha = 0.45f) else SubtleSurfaceBorder,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    .clickable { onToggleLock(!item.isLocked) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Fingerprint,
+                        contentDescription = null,
+                        tint = if (item.isLocked) EmeraldMint else TextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.auth_app_sheet_lock_toggle),
+                        color = TextPrimary,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Switch(
+                    checked = item.isLocked,
+                    onCheckedChange = onToggleLock,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = OnAccentInk,
+                        checkedTrackColor = EmeraldMint,
+                        uncheckedThumbColor = TextSecondary,
+                        uncheckedTrackColor = SubtleSurfaceFill
+                    ),
+                    modifier = Modifier.testTag("auth_sheet_lock_toggle")
+                )
+            }
+
+            // Preset Re-lock Delay chips (2 rows of 3)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.auth_relock_label),
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                presetValues.chunked(3).forEach { rowValues ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowValues.forEach { seconds ->
+                            val selected = effectiveTimeoutSeconds == seconds
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (selected) ElectricCyan.copy(alpha = 0.22f) else SubtleSurfaceFill
+                                    )
+                                    .border(
+                                        width = if (selected) 1.4.dp else 1.dp,
+                                        color = if (selected) ElectricCyan else SubtleSurfaceBorder,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = ripple(color = ElectricCyan),
+                                        onClick = {
+                                            customInput = ""
+                                            onSelectDelay(seconds)
+                                        }
+                                    )
+                                    .testTag("auth_sheet_timeout_${seconds}s"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = formatRelockDelayLabel(seconds),
+                                    color = if (selected) ElectricCyan else TextPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+                if (effectiveTimeoutSeconds == 0) {
+                    Text(
+                        text = stringResource(R.string.auth_relock_instant_hint),
+                        color = ElectricCyan.copy(alpha = 0.88f),
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+
+            // Arbitrary custom seconds input
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = customInput,
+                    onValueChange = { raw ->
+                        customInput = raw.filter { it.isDigit() }.take(5)
+                    },
+                    singleLine = true,
+                    label = {
+                        Text(
+                            text = stringResource(R.string.auth_app_sheet_custom_label),
+                            fontSize = 12.sp
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = ElectricCyan,
+                        unfocusedBorderColor = SubtleSurfaceBorder,
+                        focusedLabelColor = ElectricCyan,
+                        unfocusedLabelColor = TextSecondary,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = ElectricCyan
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("auth_sheet_custom_input")
+                )
+
+                val parsedSeconds = customInput.toIntOrNull()
+                Button(
+                    onClick = {
+                        if (parsedSeconds != null) {
+                            onSelectDelay(parsedSeconds)
+                            onDismiss()
+                        }
+                    },
+                    enabled = parsedSeconds != null,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ElectricCyan,
+                        contentColor = OnAccentInk,
+                        disabledContainerColor = SubtleSurfaceFill,
+                        disabledContentColor = TextSecondary
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .height(52.dp)
+                        .testTag("auth_sheet_apply_custom_btn")
+                ) {
+                    Text(
+                        text = stringResource(R.string.auth_app_sheet_apply_custom),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+

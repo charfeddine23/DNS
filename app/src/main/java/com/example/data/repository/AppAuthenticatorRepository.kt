@@ -30,6 +30,7 @@ class AppAuthenticatorRepository private constructor(
     private var relockTimeoutSeconds: Int = 30
     private var allowDeviceCredentialFallback: Boolean = true
     private val protectedPackages = LinkedHashSet<String>()
+    private val appRelockTimeouts = ConcurrentHashMap<String, Int>()
     private var totalUnlockCount: Long = 0L
     private var totalInterceptionCount: Long = 0L
 
@@ -103,6 +104,34 @@ class AppAuthenticatorRepository private constructor(
         _configFlow.value = snapshot
     }
 
+    fun setAppRelockTimeoutSeconds(packageName: String, seconds: Int) {
+        val sanitized = seconds.coerceAtLeast(0)
+        val snapshot: AppAuthenticatorConfig
+        synchronized(lock) {
+            appRelockTimeouts[packageName] = sanitized
+            if (sanitized == 0) {
+                unlockedUntilMs.remove(packageName)
+            }
+            persistAppTimeoutsLocked()
+            snapshot = buildConfigLocked()
+        }
+        _configFlow.value = snapshot
+    }
+
+    fun clearAppRelockTimeout(packageName: String) {
+        val snapshot: AppAuthenticatorConfig
+        synchronized(lock) {
+            appRelockTimeouts.remove(packageName)
+            persistAppTimeoutsLocked()
+            snapshot = buildConfigLocked()
+        }
+        _configFlow.value = snapshot
+    }
+
+    fun getEffectiveRelockTimeoutSeconds(packageName: String): Int {
+        return appRelockTimeouts[packageName] ?: relockTimeoutSeconds
+    }
+
     fun setAllowDeviceCredentialFallback(allowed: Boolean) {
         val snapshot: AppAuthenticatorConfig
         synchronized(lock) {
@@ -153,8 +182,23 @@ class AppAuthenticatorRepository private constructor(
                 return false
             }
 
+            // If user switched directly from another protected app that used Instant (0s), finalize leaving it
+            val prevActive = activeForegroundUnlockedPkg
+            if (prevActive != null && prevActive != packageName) {
+                val prevTimeout = getEffectiveRelockTimeoutSeconds(prevActive)
+                if (prevTimeout == 0) {
+                    unlockedUntilMs.remove(prevActive)
+                    if (lastUnlockedPkg == prevActive && (nowMs - lastUnlockedAtMs) >= POST_UNLOCK_SETTLE_MS) {
+                        lastUnlockedPkg = null
+                    }
+                }
+                activeForegroundUnlockedPkg = null
+            }
+
+            val effectiveTimeoutSec = getEffectiveRelockTimeoutSeconds(packageName)
+
             // Guard against instant-relock re-triggering during AppLockActivity/BiometricPrompt close transition
-            if (relockTimeoutSeconds == 0 &&
+            if (effectiveTimeoutSec == 0 &&
                 lastUnlockedPkg == packageName &&
                 (nowMs - lastUnlockedAtMs) in 0L..POST_UNLOCK_SETTLE_MS
             ) {
@@ -163,7 +207,7 @@ class AppAuthenticatorRepository private constructor(
             }
 
             val expiry = unlockedUntilMs[packageName] ?: 0L
-            if (relockTimeoutSeconds > 0 && nowMs < expiry) {
+            if (effectiveTimeoutSec > 0 && nowMs < expiry) {
                 activeForegroundUnlockedPkg = packageName
                 return false
             }
@@ -180,10 +224,13 @@ class AppAuthenticatorRepository private constructor(
             if (!forceOwnApp && packageName == appContext.packageName) return
             if (packageName in protectedPackages) return
 
-            // Ignore window state churn right after a fingerprint unlock while AppLockActivity finishes back to the app
             val activePkg = activeForegroundUnlockedPkg
+            val activeTimeout = activePkg?.let { getEffectiveRelockTimeoutSeconds(it) }
+                ?: relockTimeoutSeconds
+
+            // Ignore window state churn right after a fingerprint unlock while AppLockActivity finishes back to the app
             if (activePkg != null &&
-                relockTimeoutSeconds == 0 &&
+                activeTimeout == 0 &&
                 lastUnlockedPkg == activePkg &&
                 (nowMs - lastUnlockedAtMs) in 0L until POST_UNLOCK_SETTLE_MS
             ) {
@@ -191,13 +238,15 @@ class AppAuthenticatorRepository private constructor(
             }
 
             if (activePkg != null) {
-                if (relockTimeoutSeconds == 0) {
+                if (activeTimeout == 0) {
                     unlockedUntilMs.remove(activePkg)
                 }
                 activeForegroundUnlockedPkg = null
             }
-            if (relockTimeoutSeconds == 0 &&
-                lastUnlockedPkg != null &&
+            val lastPkg = lastUnlockedPkg
+            val lastTimeout = lastPkg?.let { getEffectiveRelockTimeoutSeconds(it) } ?: relockTimeoutSeconds
+            if (lastTimeout == 0 &&
+                lastPkg != null &&
                 (nowMs - lastUnlockedAtMs) >= POST_UNLOCK_SETTLE_MS
             ) {
                 lastUnlockedPkg = null
@@ -216,8 +265,9 @@ class AppAuthenticatorRepository private constructor(
                 activeLockPromptPkg = null
                 activeLockPromptAtMs = 0L
             }
-            if (relockTimeoutSeconds > 0) {
-                unlockedUntilMs[packageName] = nowMs + relockTimeoutSeconds * 1000L
+            val effectiveTimeoutSec = getEffectiveRelockTimeoutSeconds(packageName)
+            if (effectiveTimeoutSec > 0) {
+                unlockedUntilMs[packageName] = nowMs + effectiveTimeoutSec * 1000L
             } else {
                 unlockedUntilMs.remove(packageName)
             }
@@ -255,7 +305,9 @@ class AppAuthenticatorRepository private constructor(
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
         val resolved = pm.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
-        val currentLocked = synchronized(lock) { protectedPackages.toSet() }
+        val (currentLocked, currentTimeouts) = synchronized(lock) {
+            protectedPackages.toSet() to appRelockTimeouts.toMap()
+        }
         val seenPackages = HashSet<String>()
         val items = ArrayList<InstalledAppItem>(resolved.size)
 
@@ -275,7 +327,8 @@ class AppAuthenticatorRepository private constructor(
                     packageName = pkg,
                     appName = label,
                     isSystemApp = isSystem,
-                    isLocked = pkg in currentLocked
+                    isLocked = pkg in currentLocked,
+                    customRelockTimeoutSeconds = currentTimeouts[pkg]
                 )
             )
         }
@@ -286,6 +339,11 @@ class AppAuthenticatorRepository private constructor(
                 .thenBy { it.appName.lowercase() }
         )
         items
+    }
+
+    private fun persistAppTimeoutsLocked() {
+        val encoded = appRelockTimeouts.entries.mapTo(HashSet()) { (pkg, sec) -> "$pkg|$sec" }
+        prefs.edit().putStringSet(KEY_APP_RELOCK_TIMEOUTS, encoded).apply()
     }
 
     private fun loadFromPrefs() {
@@ -299,6 +357,17 @@ class AppAuthenticatorRepository private constructor(
             prefs.getStringSet(KEY_PROTECTED_PACKAGES, emptySet())?.let {
                 protectedPackages.addAll(it)
             }
+            appRelockTimeouts.clear()
+            prefs.getStringSet(KEY_APP_RELOCK_TIMEOUTS, emptySet())?.forEach { entry ->
+                val sep = entry.lastIndexOf('|')
+                if (sep > 0) {
+                    val pkg = entry.substring(0, sep)
+                    val sec = entry.substring(sep + 1).toIntOrNull()
+                    if (pkg.isNotBlank() && sec != null && sec >= 0) {
+                        appRelockTimeouts[pkg] = sec
+                    }
+                }
+            }
             _configFlow.value = buildConfigLocked()
         }
     }
@@ -309,6 +378,7 @@ class AppAuthenticatorRepository private constructor(
             relockTimeoutSeconds = relockTimeoutSeconds,
             allowDeviceCredentialFallback = allowDeviceCredentialFallback,
             protectedPackages = protectedPackages.toSet(),
+            appRelockTimeouts = appRelockTimeouts.toMap(),
             totalUnlockCount = totalUnlockCount,
             totalInterceptionCount = totalInterceptionCount
         )
@@ -318,6 +388,7 @@ class AppAuthenticatorRepository private constructor(
         private const val PREFS_NAME = "dns_pulse_app_auth"
         private const val KEY_MASTER_GUARD = "key_master_guard"
         private const val KEY_PROTECTED_PACKAGES = "key_protected_packages"
+        private const val KEY_APP_RELOCK_TIMEOUTS = "key_app_relock_timeouts"
         private const val KEY_RELOCK_TIMEOUT_SEC = "key_relock_timeout_sec"
         private const val KEY_ALLOW_CREDENTIAL_FALLBACK = "key_allow_credential_fallback"
         private const val KEY_TOTAL_UNLOCKS = "key_total_unlocks"

@@ -113,7 +113,10 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
             appAuthRepository.configFlow.collect { config ->
                 _uiState.update { state ->
                     val updatedApps = state.installedApps.map { app ->
-                        app.copy(isLocked = app.packageName in config.protectedPackages)
+                        app.copy(
+                            isLocked = app.packageName in config.protectedPackages,
+                            customRelockTimeoutSeconds = config.appRelockTimeouts[app.packageName]
+                        )
                     }
                     state.copy(authConfig = config, installedApps = updatedApps)
                 }
@@ -157,6 +160,10 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
 
     fun setRelockTimeoutSeconds(seconds: Int) {
         appAuthRepository.setRelockTimeoutSeconds(seconds)
+    }
+
+    fun setAppRelockTimeoutSeconds(packageName: String, seconds: Int) {
+        appAuthRepository.setAppRelockTimeoutSeconds(packageName, seconds)
     }
 
     fun setAllowDeviceCredentialFallback(allowed: Boolean) {

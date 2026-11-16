@@ -66,6 +66,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -82,9 +83,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -352,104 +355,109 @@ class MainActivity : FragmentActivity() {
                         },
                         contentWindowInsets = stableSafeInsets
                     ) { innerPadding ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(
-                                    top = innerPadding.calculateTopPadding()
-                                )
-                        ) {
-                            HorizontalPager(
-                                state = pagerState,
-                                beyondViewportPageCount = 1,
-                                flingBehavior = PagerDefaults.flingBehavior(
+                        val originalLayoutDirection = LocalLayoutDirection.current
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(
+                                        top = innerPadding.calculateTopPadding()
+                                    )
+                            ) {
+                                HorizontalPager(
                                     state = pagerState,
-                                    pagerSnapDistance = PagerSnapDistance.atMost(1)
-                                ),
-                                modifier = Modifier.fillMaxSize()
-                            ) { page ->
-                                val pageOffset = ((pagerState.currentPage - page) +
-                                    pagerState.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
+                                    beyondViewportPageCount = 1,
+                                    flingBehavior = PagerDefaults.flingBehavior(
+                                        state = pagerState,
+                                        pagerSnapDistance = PagerSnapDistance.atMost(1)
+                                    ),
+                                    modifier = Modifier.fillMaxSize()
+                                ) { page ->
+                                    val pageOffset = ((pagerState.currentPage - page) +
+                                        pagerState.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
 
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .then(
-                                            if (uiState.simpleMode) {
-                                                Modifier
-                                            } else {
-                                                Modifier.graphicsLayer {
-                                                    val scale = lerp(1f, 0.93f, pageOffset)
-                                                    scaleX = scale
-                                                    scaleY = scale
-                                                    alpha = lerp(1f, 0.65f, pageOffset)
-                                                }
-                                            }
-                                        )
-                                ) {
-                                    when (page) {
-                                        0 -> HomeScreen(
-                                            uiState = uiState,
-                                            viewModel = viewModel,
-                                            onFallbackRequired = { hostname ->
-                                                val intent = PrivateDnsController.copyToClipboardAndGetSettingsIntent(
-                                                    this@MainActivity,
-                                                    hostname
+                                    CompositionLocalProvider(LocalLayoutDirection provides originalLayoutDirection) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .then(
+                                                    if (uiState.simpleMode) {
+                                                        Modifier
+                                                    } else {
+                                                        Modifier.graphicsLayer {
+                                                            val scale = lerp(1f, 0.93f, pageOffset)
+                                                            scaleX = scale
+                                                            scaleY = scale
+                                                            alpha = lerp(1f, 0.65f, pageOffset)
+                                                        }
+                                                    }
                                                 )
-                                                Toast.makeText(
-                                                    this@MainActivity,
-                                                    "Copied \"$hostname\"! Paste it under Private DNS provider.",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                                try {
-                                                    startActivity(intent)
-                                                } catch (_: Exception) {
-                                                    startActivity(Intent(Settings.ACTION_SETTINGS))
-                                                }
-                                            },
-                                            onLaunchWirelessSettings = {
-                                                try {
-                                                    startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                                                } catch (_: Exception) {
-                                                    startActivity(Intent(Settings.ACTION_SETTINGS))
-                                                }
+                                        ) {
+                                            when (page) {
+                                                0 -> HomeScreen(
+                                                    uiState = uiState,
+                                                    viewModel = viewModel,
+                                                    onFallbackRequired = { hostname ->
+                                                        val intent = PrivateDnsController.copyToClipboardAndGetSettingsIntent(
+                                                            this@MainActivity,
+                                                            hostname
+                                                        )
+                                                        Toast.makeText(
+                                                            this@MainActivity,
+                                                            "Copied \"$hostname\"! Paste it under Private DNS provider.",
+                                                            Toast.LENGTH_LONG
+                                                        ).show()
+                                                        try {
+                                                            startActivity(intent)
+                                                        } catch (_: Exception) {
+                                                            startActivity(Intent(Settings.ACTION_SETTINGS))
+                                                        }
+                                                    },
+                                                    onLaunchWirelessSettings = {
+                                                        try {
+                                                            startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                                                        } catch (_: Exception) {
+                                                            startActivity(Intent(Settings.ACTION_SETTINGS))
+                                                        }
+                                                    }
+                                                )
+                                                1 -> AnalyticsScreen(
+                                                    uiState = uiState,
+                                                    viewModel = viewModel,
+                                                    onNavigateToShield = { slideToPage(0) }
+                                                )
+                                                2 -> AuthenticatorScreen(
+                                                    uiState = uiState,
+                                                    viewModel = viewModel
+                                                )
+                                                3 -> SettingsScreen(
+                                                    uiState = uiState,
+                                                    viewModel = viewModel,
+                                                    onLaunchWirelessSettings = {
+                                                        try {
+                                                            startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                                                        } catch (_: Exception) {
+                                                            startActivity(Intent(Settings.ACTION_SETTINGS))
+                                                        }
+                                                    }
+                                                )
                                             }
-                                        )
-                                        1 -> AuthenticatorScreen(
-                                            uiState = uiState,
-                                            viewModel = viewModel
-                                        )
-                                        2 -> AnalyticsScreen(
-                                            uiState = uiState,
-                                            viewModel = viewModel,
-                                            onNavigateToShield = { slideToPage(0) }
-                                        )
-                                        3 -> SettingsScreen(
-                                            uiState = uiState,
-                                            viewModel = viewModel,
-                                            onLaunchWirelessSettings = {
-                                                try {
-                                                    startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                                                } catch (_: Exception) {
-                                                    startActivity(Intent(Settings.ACTION_SETTINGS))
-                                                }
-                                            }
-                                        )
+                                        }
                                     }
                                 }
-                            }
 
-                            // Floating Glass Slide Dock pinned cleanly above system navigation bar (stays fixed in Full Screen)
-                            FloatingPulseNavBar(
-                                currentPage = pagerState.currentPage,
-                                continuousPagePosition = continuousPagePos,
-                                activeAccent = if (isProtected && isAdGuardDoT) EmeraldMint else ElectricCyan,
-                                onSelectPage = slideToPage,
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .windowInsetsPadding(stableNavInsets)
-                                    .padding(horizontal = 10.dp, vertical = 14.dp)
-                            )
+                                // Floating Glass Slide Dock pinned cleanly above system navigation bar (LTR fixed left-to-right)
+                                FloatingPulseNavBar(
+                                    currentPage = pagerState.currentPage,
+                                    continuousPagePosition = continuousPagePos,
+                                    activeAccent = if (isProtected && isAdGuardDoT) EmeraldMint else ElectricCyan,
+                                    onSelectPage = slideToPage,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .windowInsetsPadding(stableNavInsets)
+                                        .padding(horizontal = 10.dp, vertical = 14.dp)
+                                )
+                            }
                         }
                     }
 
@@ -491,8 +499,8 @@ private fun FloatingPulseNavBar(
     val tabs = remember {
         listOf(
             NavTabSpec(0, "Shield", Icons.Filled.Home, Icons.Outlined.Home, "nav_item_home", "Shield"),
-            NavTabSpec(1, "Authenticator", Icons.Filled.Fingerprint, Icons.Outlined.Fingerprint, "nav_item_authenticator", "Authenticator"),
-            NavTabSpec(2, "Analytics", Icons.Filled.Analytics, Icons.Outlined.Analytics, "nav_item_analytics", "Analytics"),
+            NavTabSpec(1, "Analytics", Icons.Filled.Analytics, Icons.Outlined.Analytics, "nav_item_analytics", "Analytics"),
+            NavTabSpec(2, "Authenticator", Icons.Filled.Fingerprint, Icons.Outlined.Fingerprint, "nav_item_authenticator", "Authenticator"),
             NavTabSpec(3, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "nav_item_settings", "Settings")
         )
     }

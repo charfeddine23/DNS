@@ -71,9 +71,18 @@
     <string name="auth_stat_blocked">طلبات الحماية</string>
     <string name="auth_relock_label">مهلة إعادة القفل</string>
     <string name="auth_relock_instant">فوري</string>
+    <string name="auth_relock_15s">15ث</string>
     <string name="auth_relock_30s">30ث</string>
     <string name="auth_relock_1m">1د</string>
     <string name="auth_relock_5m">5د</string>
+    <string name="auth_relock_15m">15د</string>
+    <string name="auth_relock_instant_hint">يُقفل تلقائياً عند الخروج من التطبيق فقط</string>
+    <string name="auth_long_press_hint">اضغط مطولاً (ثانية) على أي تطبيق لتخصيص وقت القفل الخاص به</string>
+    <string name="auth_app_sheet_title">مهلة إعادة القفل • %1$s</string>
+    <string name="auth_app_sheet_custom_label">مهلة مخصصة (بالثواني)</string>
+    <string name="auth_app_sheet_apply_custom">تطبيق المدة</string>
+    <string name="auth_app_sheet_lock_toggle">تفعيل القفل بالبصمة</string>
+    <string name="auth_relock_custom_fmt">%1$dث</string>
     <string name="auth_search_hint">ابحث عن أي تطبيق لقفله بالبصمة...</string>
     <string name="auth_filter_all">الكل</string>
     <string name="auth_filter_protected">المحمية</string>
@@ -90,6 +99,4 @@
     <string name="auth_lock_screen_cancel_btn">العودة للرئيسية</string>
     <string name="auth_test_success">تم التحقق من البصمة بنجاح</string>
     <string name="auth_test_failed">تم إلغاء التحقق أو تعذر التعرف</string>
-    <string name="workspace_tab_dot_shield">DoT والمكدّس</string>
-    <string name="workspace_tab_benchmark">فحص السرعة</string>
 </resources>

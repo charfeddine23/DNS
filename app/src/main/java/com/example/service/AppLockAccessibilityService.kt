@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.view.accessibility.AccessibilityEvent
+import com.example.MainActivity
 import com.example.data.repository.AppAuthenticatorRepository
 
 class AppLockAccessibilityService : AccessibilityService() {
@@ -58,7 +59,7 @@ class AppLockAccessibilityService : AccessibilityService() {
 
         val now = System.currentTimeMillis()
         if (pkg == packageName) {
-            if (event.className?.toString() == "com.example.MainActivity") {
+            if (event.className?.toString() == MainActivity::class.java.name) {
                 authRepo.onNonProtectedAppForegrounded(pkg, now, forceOwnApp = true)
             }
             return
@@ -143,11 +144,11 @@ class AppLockAccessibilityService : AccessibilityService() {
         val resolved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.queryIntentActivities(
                 intent,
-                PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong())
+                PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong())
             )
         } else {
             @Suppress("DEPRECATION")
-            packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            packageManager.queryIntentActivities(intent, PackageManager.MATCH_ALL)
         }
         return resolved.mapNotNull { it.activityInfo?.packageName }.filter { it != packageName }.toSet()
     }

@@ -87,9 +87,18 @@
     <string name="auth_stat_blocked">Prompts</string>
     <string name="auth_relock_label">Re-lock Delay</string>
     <string name="auth_relock_instant">Instant</string>
+    <string name="auth_relock_15s">15s</string>
     <string name="auth_relock_30s">30s</string>
     <string name="auth_relock_1m">1m</string>
     <string name="auth_relock_5m">5m</string>
+    <string name="auth_relock_15m">15m</string>
+    <string name="auth_relock_instant_hint">Locks automatically when exiting the app</string>
+    <string name="auth_long_press_hint">Hold any app for 1s to customize its Re-lock Delay</string>
+    <string name="auth_app_sheet_title">Re-lock Delay • %1$s</string>
+    <string name="auth_app_sheet_custom_label">Custom delay (seconds)</string>
+    <string name="auth_app_sheet_apply_custom">Apply Custom</string>
+    <string name="auth_app_sheet_lock_toggle">Fingerprint Lock Enabled</string>
+    <string name="auth_relock_custom_fmt">%1$ds</string>
     <string name="auth_search_hint">Search apps to lock...</string>
     <string name="auth_filter_all">All</string>
     <string name="auth_filter_protected">Protected</string>
@@ -106,6 +115,4 @@
     <string name="auth_lock_screen_cancel_btn">Return Home</string>
     <string name="auth_test_success">Fingerprint verified successfully</string>
     <string name="auth_test_failed">Authentication cancelled or failed</string>
-    <string name="workspace_tab_dot_shield">DoT &amp; Deck</string>
-    <string name="workspace_tab_benchmark">Benchmark</string>
 </resources>

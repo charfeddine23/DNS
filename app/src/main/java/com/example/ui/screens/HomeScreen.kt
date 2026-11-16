@@ -4,9 +4,6 @@ import android.net.VpnService
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -16,11 +13,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -42,24 +34,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -68,28 +53,21 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
 import com.example.data.model.DnsEngineMode
-import com.example.ui.components.AddCustomServerSheet
-import com.example.ui.components.BenchmarkTelemetryCard
 import com.example.ui.components.DnsServerCard
-import com.example.ui.components.ExpertModeBottomSheet
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HeroPulseButton
 import com.example.ui.components.InteractiveStackedDnsServers
-import com.example.ui.components.PrivateDnsShieldCard
 import com.example.ui.theme.CrimsonPulse
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassSurface
-import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -107,10 +85,6 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val simpleMode = LocalSimpleMode.current
-    var showExpertSheet by remember { mutableStateOf(false) }
-    var showAddCustomDialog by remember { mutableStateOf(false) }
-    // 0 = DoT & Deck workspace, 1 = Benchmark & Resolvers workspace
-    var workspaceTab by rememberSaveable { mutableIntStateOf(0) }
 
     val vpnLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -288,7 +262,7 @@ fun HomeScreen(
                 }
             }
 
-            // Live Telemetry Ribbon (tapping Ping jumps cleanly to Benchmark workspace)
+            // Live Telemetry Ribbon
             item {
                 val statusTint = when {
                     !isAnyActive -> CrimsonPulse
@@ -349,14 +323,12 @@ fun HomeScreen(
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(ElectricCyan.copy(alpha = 0.14f))
                                 .border(1.dp, ElectricCyan.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
-                                .clickable {
-                                    workspaceTab = 1
-                                    viewModel.pingAllServers()
-                                }
+                                .clickable { viewModel.pingAllServers() }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .testTag("telemetry_ping_pill")
                         ) {
                             Text(
-                                text = if (displayPing != null && displayPing > 0) "$displayPing ms" else "Benchmark",
+                                text = if (displayPing != null && displayPing > 0) "$displayPing ms" else "Ping",
                                 color = ElectricCyan,
                                 fontSize = 11.5.sp,
                                 fontFamily = FontFamily.Monospace,
@@ -367,119 +339,19 @@ fun HomeScreen(
                 }
             }
 
-            // Organized Workspace Organizer Tabs (Merges Private DNS DoT + Stack + Benchmark cleanly)
-            item {
-                ShieldWorkspaceSwitcher(
-                    selectedTab = workspaceTab,
-                    fastestMs = fastestMs,
-                    serverCount = uiState.vpnServers.size,
-                    onSelectTab = { workspaceTab = it }
-                )
-            }
-
-            if (workspaceTab == 0) {
-                // Workspace 0: Interactive Stack + Private DNS (DoT) Shield Card
-                if (!simpleMode) {
-                    item {
-                        InteractiveStackedDnsServers(
-                            servers = uiState.vpnServers,
-                            selectedServerId = uiState.selectedVpnServerId,
-                            isEngineActive = isAnyActive,
-                            isPinging = uiState.isPinging,
-                            onPingAll = { viewModel.pingAllServers() },
-                            onAutoSelectFastest = { viewModel.autoSelectFastestServer() },
-                            onServerSettledOnTop = { settledServer ->
-                                viewModel.activateServerFromDeck(
-                                    server = settledServer,
-                                    context = context,
-                                    onVpnPermissionRequired = { prepareIntent ->
-                                        vpnLauncher.launch(prepareIntent)
-                                    },
-                                    onPrivateDnsFallback = onFallbackRequired
-                                )
-                            }
-                        )
-                    }
-                }
-
-                if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS || simpleMode) {
-                    item {
-                        AnimatedContent(
-                            targetState = uiState.engineMode,
-                            transitionSpec = {
-                                if (simpleMode) {
-                                    EnterTransition.None togetherWith ExitTransition.None
-                                } else {
-                                    val forward = targetState == DnsEngineMode.LOCAL_VPN
-                                    (slideInHorizontally(
-                                        animationSpec = spring(
-                                            dampingRatio = 0.86f,
-                                            stiffness = Spring.StiffnessMediumLow
-                                        )
-                                    ) { width -> if (forward) width else -width } + fadeIn(tween(260)))
-                                        .togetherWith(
-                                            slideOutHorizontally(
-                                                animationSpec = spring(
-                                                    dampingRatio = 0.86f,
-                                                    stiffness = Spring.StiffnessMediumLow
-                                                )
-                                            ) { width -> if (forward) -width else width } + fadeOut(tween(200))
-                                        )
-                                }
-                            },
-                            label = "engine_panel_slide"
-                        ) { mode ->
-                            if (mode == DnsEngineMode.PRIVATE_DNS) {
-                                PrivateDnsShieldCard(
-                                    privateDnsState = uiState.privateDnsState,
-                                    presets = uiState.privatePresets,
-                                    selectedHostname = uiState.selectedDotPreset,
-                                    onActivatePreset = { preset ->
-                                        viewModel.activatePrivateDnsPreset(preset) { host ->
-                                            onFallbackRequired(host)
-                                        }
-                                    },
-                                    onDisablePrivateDns = {
-                                        viewModel.disablePrivateDns {
-                                            onLaunchWirelessSettings()
-                                        }
-                                    },
-                                    onOpenExpertGuide = { showExpertSheet = true },
-                                    onLaunchWirelessSettings = onLaunchWirelessSettings
-                                )
-                            } else if (simpleMode) {
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    uiState.vpnServers.forEach { server ->
-                                        DnsServerCard(
-                                            profile = server,
-                                            isSelected = uiState.selectedVpnServerId == server.id,
-                                            onSelect = { viewModel.selectVpnServer(server.id) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Workspace 1: Integrated Benchmark Telemetry & Full Resolver Profiles
+            // 3D Stacked Server Deck (or flat resolver cards in Simple Mode)
+            if (!simpleMode) {
                 item {
-                    BenchmarkTelemetryCard(
+                    InteractiveStackedDnsServers(
                         servers = uiState.vpnServers,
+                        selectedServerId = uiState.selectedVpnServerId,
+                        isEngineActive = isAnyActive,
                         isPinging = uiState.isPinging,
                         onPingAll = { viewModel.pingAllServers() },
                         onAutoSelectFastest = { viewModel.autoSelectFastestServer() },
-                        onAddCustomClick = { showAddCustomDialog = true }
-                    )
-                }
-
-                items(uiState.vpnServers, key = { "bench_${it.id}" }) { server ->
-                    DnsServerCard(
-                        profile = server,
-                        isSelected = uiState.selectedVpnServerId == server.id,
-                        onSelect = {
+                        onServerSettledOnTop = { settledServer ->
                             viewModel.activateServerFromDeck(
-                                server = server,
+                                server = settledServer,
                                 context = context,
                                 onVpnPermissionRequired = { prepareIntent ->
                                     vpnLauncher.launch(prepareIntent)
@@ -489,145 +361,17 @@ fun HomeScreen(
                         }
                     )
                 }
-            }
-        }
-    }
-
-    if (showExpertSheet) {
-        ExpertModeBottomSheet(
-            shizukuStatus = uiState.shizukuStatus,
-            onRequestShizukuPermission = { viewModel.requestShizukuAuthorization() },
-            onGrantViaShizuku = { viewModel.grantPermissionViaShizuku() },
-            onDismiss = { showExpertSheet = false }
-        )
-    }
-
-    if (showAddCustomDialog) {
-        AddCustomServerSheet(
-            onDismiss = { showAddCustomDialog = false },
-            onAdd = { name, p4, s4, p6, dot ->
-                viewModel.addCustomServer(name, p4, s4, p6, dot)
-                showAddCustomDialog = false
-            }
-        )
-    }
-}
-
-@Composable
-private fun ShieldWorkspaceSwitcher(
-    selectedTab: Int,
-    fastestMs: Long?,
-    serverCount: Int,
-    onSelectTab: (Int) -> Unit
-) {
-    val simpleMode = LocalSimpleMode.current
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(GlassSurface)
-            .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
-            .padding(4.dp)
-            .testTag("shield_workspace_switcher")
-    ) {
-        val segmentWidth = maxWidth / 2
-        val indicatorOffset = if (simpleMode) {
-            segmentWidth * selectedTab
-        } else {
-            val animOffset by animateDpAsState(
-                targetValue = segmentWidth * selectedTab,
-                animationSpec = spring(
-                    dampingRatio = 0.82f,
-                    stiffness = Spring.StiffnessMediumLow
-                ),
-                label = "workspace_tab_offset"
-            )
-            animOffset
-        }
-
-        val activeAccent = if (selectedTab == 0) ElectricCyan else HoloViolet
-        Box(
-            modifier = Modifier
-                .offset(x = indicatorOffset)
-                .width(segmentWidth)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(12.dp))
-                .background(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            activeAccent.copy(alpha = 0.24f),
-                            EmeraldMint.copy(alpha = 0.14f)
-                        )
-                    )
-                )
-                .border(1.dp, activeAccent.copy(alpha = 0.50f), RoundedCornerShape(12.dp))
-        )
-
-        Row(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = ripple(color = ElectricCyan),
-                        onClick = { onSelectTab(0) }
-                    )
-                    .testTag("workspace_tab_dot_shield"),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Layers,
-                        contentDescription = null,
-                        tint = if (selectedTab == 0) ElectricCyan else TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.workspace_tab_dot_shield),
-                        color = if (selectedTab == 0) TextPrimary else TextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = ripple(color = HoloViolet),
-                        onClick = { onSelectTab(1) }
-                    )
-                    .testTag("workspace_tab_benchmark"),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Speed,
-                        contentDescription = null,
-                        tint = if (selectedTab == 1) HoloViolet else TextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    val benchLabel = stringResource(R.string.workspace_tab_benchmark)
-                    val suffix = if (fastestMs != null && fastestMs > 0L) "${fastestMs}ms" else "$serverCount"
-                    Text(
-                        text = "$benchLabel • $suffix",
-                        color = if (selectedTab == 1) TextPrimary else TextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+            } else {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        uiState.vpnServers.forEach { server ->
+                            DnsServerCard(
+                                profile = server,
+                                isSelected = uiState.selectedVpnServerId == server.id,
+                                onSelect = { viewModel.selectVpnServer(server.id) }
+                            )
+                        }
+                    }
                 }
             }
         }
