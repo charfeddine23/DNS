@@ -6,11 +6,15 @@ import android.net.VpnService
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
+import com.example.data.model.AppAuthenticatorConfig
+import com.example.data.model.BiometricHardwareStatus
 import com.example.data.model.DnsAnalyticsSnapshot
 import com.example.data.model.DnsEngineMode
 import com.example.data.model.DnsServerProfile
+import com.example.data.model.InstalledAppItem
 import com.example.data.model.PrivateDnsPreset
 import com.example.data.preferences.PreferencesManager
+import com.example.data.repository.AppAuthenticatorRepository
 import com.example.data.repository.DnsAnalyticsRepository
 import com.example.data.repository.DnsPresetData
 import com.example.domain.usecase.BenchmarkDnsServersUseCase
@@ -19,6 +23,7 @@ import com.example.service.ShizukuDnsBridgeService
 import com.example.service.ShizukuStatus
 import com.example.ui.theme.AppAppearanceMode
 import com.example.ui.theme.AppThemeStyle
+import com.example.utils.BiometricHelper
 import com.example.utils.GitHubReleaseInfo
 import com.example.utils.LatencyTester
 import com.example.utils.PrivateDnsController
@@ -59,13 +64,19 @@ data class HomeUiState(
     val appearanceMode: AppAppearanceMode = AppAppearanceMode.DARK,
     val updateState: UpdateDownloadState = UpdateDownloadState.Idle,
     val showUpdateDialog: Boolean = false,
-    val analytics: DnsAnalyticsSnapshot = DnsAnalyticsSnapshot()
+    val analytics: DnsAnalyticsSnapshot = DnsAnalyticsSnapshot(),
+    val authConfig: AppAuthenticatorConfig = AppAuthenticatorConfig(),
+    val biometricStatus: BiometricHardwareStatus = BiometricHardwareStatus.UNAVAILABLE,
+    val isAccessibilityGuardActive: Boolean = false,
+    val installedApps: List<InstalledAppItem> = emptyList(),
+    val isLoadingApps: Boolean = false
 )
 
 class DnsPulseViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = PreferencesManager(application)
     private val analyticsRepository = DnsAnalyticsRepository.getInstance(application)
+    private val appAuthRepository = AppAuthenticatorRepository.getInstance(application)
     private val benchmarkDnsServers = BenchmarkDnsServersUseCase()
     val shizukuBridge: ShizukuDnsBridgeService = ShizukuDnsBridgeService.getInstance(application)
 
@@ -74,14 +85,18 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
 
     private var updateCheckJob: Job? = null
     private var apkDownloadJob: Job? = null
+    private var loadAppsJob: Job? = null
     private var lastAutoCheckAtMs: Long = 0L
 
     init {
         refreshSystemPrivateDnsState()
+        refreshAuthenticatorEnvironment()
         observeVpnService()
         observeShizukuStatus()
         observeAnalytics()
+        observeAuthenticatorConfig()
         loadPreferences()
+        loadInstalledApps()
         pingAllServers()
     }
 
@@ -91,6 +106,61 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
                 _uiState.update { it.copy(analytics = snapshot) }
             }
         }
+    }
+
+    private fun observeAuthenticatorConfig() {
+        viewModelScope.launch {
+            appAuthRepository.configFlow.collect { config ->
+                _uiState.update { state ->
+                    val updatedApps = state.installedApps.map { app ->
+                        app.copy(isLocked = app.packageName in config.protectedPackages)
+                    }
+                    state.copy(authConfig = config, installedApps = updatedApps)
+                }
+            }
+        }
+    }
+
+    fun refreshAuthenticatorEnvironment() {
+        val context = getApplication<Application>()
+        val hw = BiometricHelper.checkHardwareStatus(context)
+        val accessibilityEnabled = AppAuthenticatorRepository.isAccessibilityServiceEnabled(context)
+        _uiState.update {
+            it.copy(
+                biometricStatus = hw,
+                isAccessibilityGuardActive = accessibilityEnabled
+            )
+        }
+    }
+
+    fun loadInstalledApps(forceReload: Boolean = false) {
+        if (!forceReload && _uiState.value.installedApps.isNotEmpty()) return
+        if (loadAppsJob?.isActive == true) return
+        loadAppsJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingApps = true) }
+            val apps = try {
+                appAuthRepository.loadLaunchableApps(getApplication())
+            } catch (_: Exception) {
+                emptyList()
+            }
+            _uiState.update { it.copy(installedApps = apps, isLoadingApps = false) }
+        }
+    }
+
+    fun setMasterAppGuardEnabled(enabled: Boolean) {
+        appAuthRepository.setMasterGuardEnabled(enabled)
+    }
+
+    fun toggleAppFingerprintLock(packageName: String, enabled: Boolean) {
+        appAuthRepository.toggleAppLock(packageName, enabled)
+    }
+
+    fun setRelockTimeoutSeconds(seconds: Int) {
+        appAuthRepository.setRelockTimeoutSeconds(seconds)
+    }
+
+    fun setAllowDeviceCredentialFallback(allowed: Boolean) {
+        appAuthRepository.setAllowDeviceCredentialFallback(allowed)
     }
 
     fun resetAnalytics() {

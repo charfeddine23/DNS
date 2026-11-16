@@ -10,12 +10,21 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <!-- Optional permission for direct Private DNS switching without user manual prompt -->
     <!-- Can be granted via Shizuku or `adb shell pm grant com.pulse.dnspulse android.permission.WRITE_SECURE_SETTINGS` -->
     <uses-permission
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
+
+    <!-- Discover launchable user & system apps for Fingerprint App Authenticator -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -97,6 +106,29 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Biometric Lock Gate Overlay Activity for protected apps -->
+        <activity
+            android:name=".service.AppLockActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:theme="@style/Theme.MyApplication" />
+
+        <!-- Instant foreground detection for apps protected by Fingerprint Authenticator -->
+        <service
+            android:name=".service.AppLockAccessibilityService"
+            android:exported="true"
+            android:label="@string/auth_accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_app_lock_config" />
+        </service>
 
     </application>
 

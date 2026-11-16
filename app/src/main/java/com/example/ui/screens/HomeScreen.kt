@@ -40,20 +40,25 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,12 +68,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.model.DnsEngineMode
+import com.example.ui.components.AddCustomServerSheet
+import com.example.ui.components.BenchmarkTelemetryCard
 import com.example.ui.components.DnsServerCard
 import com.example.ui.components.ExpertModeBottomSheet
 import com.example.ui.components.GlassCard
@@ -80,7 +89,7 @@ import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassSurface
-import com.example.ui.theme.GlassSurfaceVariant
+import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -94,12 +103,14 @@ fun HomeScreen(
     viewModel: DnsPulseViewModel,
     onFallbackRequired: (String) -> Unit,
     onLaunchWirelessSettings: () -> Unit,
-    onNavigateToServers: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val simpleMode = LocalSimpleMode.current
     var showExpertSheet by remember { mutableStateOf(false) }
+    var showAddCustomDialog by remember { mutableStateOf(false) }
+    // 0 = DoT & Deck workspace, 1 = Benchmark & Resolvers workspace
+    var workspaceTab by rememberSaveable { mutableIntStateOf(0) }
 
     val vpnLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -123,6 +134,10 @@ fun HomeScreen(
         uiState.activeVpnServerName
     }
 
+    val fastestMs = remember(uiState.vpnServers) {
+        uiState.vpnServers.mapNotNull { it.latencyMs }.filter { it > 0L }.minOrNull()
+    }
+
     val liveDotPulse = if (simpleMode) {
         1f
     } else {
@@ -138,293 +153,341 @@ fun HomeScreen(
         animatedPulse
     }
 
-    LazyColumn(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Transparent)
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(bottom = 110.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(Color.Transparent),
+        contentAlignment = Alignment.TopCenter
     ) {
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        ElectricCyan.copy(alpha = 0.28f),
-                                        ElectricCyan.copy(alpha = 0.08f)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 720.dp)
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(bottom = 110.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Top Header
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(
+                                            ElectricCyan.copy(alpha = 0.28f),
+                                            ElectricCyan.copy(alpha = 0.08f)
+                                        )
                                     )
                                 )
+                                .border(1.dp, ElectricCyan.copy(alpha = 0.4f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = "DNS Pulse",
+                                tint = ElectricCyan,
+                                modifier = Modifier.size(22.dp)
                             )
-                            .border(1.dp, ElectricCyan.copy(alpha = 0.4f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Bolt,
-                            contentDescription = "DNS Pulse",
-                            tint = ElectricCyan,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        }
+                        Spacer(modifier = Modifier.width(11.dp))
+                        Column {
+                            Text(
+                                text = "DNS PULSE",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 19.sp,
+                                letterSpacing = 1.4.sp
+                            )
+                            Text(
+                                text = "Autonomous Cyber Shield",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.width(11.dp))
-                    Column {
-                        Text(
-                            text = "DNS PULSE",
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 19.sp,
-                            letterSpacing = 1.4.sp
-                        )
-                        Text(
-                            text = "Autonomous Cyber Shield",
-                            color = TextSecondary,
-                            fontSize = 11.sp
+
+                    UiModeHeaderSwitcher(
+                        isSimpleMode = uiState.simpleMode,
+                        onSelectSimpleMode = { enabled ->
+                            viewModel.setSimpleMode(enabled)
+                        }
+                    )
+                }
+            }
+
+            // Engine Mode Switcher (Private DNS DoT vs Local VPN Tunnel)
+            item {
+                EngineSegmentedSlider(
+                    selectedMode = uiState.engineMode,
+                    onSelectMode = { viewModel.setEngineMode(it) }
+                )
+            }
+
+            // Center Living Pulse Reactor
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    HeroPulseButton(
+                        isActive = isAnyActive,
+                        activeHostOrServer = activeDisplayTarget,
+                        latencyMs = uiState.livePingMs ?: fastestMs,
+                        isAdGuardShield = isAdGuardDoT,
+                        onClick = {
+                            if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS) {
+                                if (isDoTActive) {
+                                    viewModel.disablePrivateDns {
+                                        onLaunchWirelessSettings()
+                                    }
+                                } else {
+                                    val adguard = uiState.privatePresets.firstOrNull { it.isAdGuardShield }
+                                        ?: uiState.privatePresets.first()
+                                    viewModel.activatePrivateDnsPreset(adguard) { host ->
+                                        onFallbackRequired(host)
+                                    }
+                                }
+                            } else {
+                                if (uiState.isVpnActive) {
+                                    viewModel.stopVpn(context)
+                                } else {
+                                    var prepareFailed = false
+                                    val prepareIntent = try {
+                                        VpnService.prepare(context)
+                                    } catch (e: Exception) {
+                                        prepareFailed = true
+                                        Toast.makeText(
+                                            context,
+                                            "VPN permission unavailable: ${e.localizedMessage}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        null
+                                    }
+                                    if (!prepareFailed) {
+                                        if (prepareIntent != null) {
+                                            vpnLauncher.launch(prepareIntent)
+                                        } else {
+                                            viewModel.startVpn(context)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
+            // Live Telemetry Ribbon (tapping Ping jumps cleanly to Benchmark workspace)
+            item {
+                val statusTint = when {
+                    !isAnyActive -> CrimsonPulse
+                    isAdGuardDoT -> EmeraldMint
+                    else -> ElectricCyan
+                }
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 16.dp,
+                    borderColor = statusTint.copy(alpha = 0.45f),
+                    breathingGlow = !simpleMode && isAnyActive
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .alpha(if (isAnyActive) liveDotPulse else 0.7f)
+                                    .clip(CircleShape)
+                                    .background(statusTint)
+                            )
+                            Spacer(modifier = Modifier.width(9.dp))
+                            Column {
+                                Text(
+                                    text = if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS)
+                                        "ENCRYPTED DoT ENDPOINT"
+                                    else
+                                        "LOCAL VPN TUNNEL NODE",
+                                    color = TextSecondary,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp
+                                )
+                                Text(
+                                    text = activeDisplayTarget,
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        val displayPing = uiState.livePingMs ?: fastestMs
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(ElectricCyan.copy(alpha = 0.14f))
+                                .border(1.dp, ElectricCyan.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                                .clickable {
+                                    workspaceTab = 1
+                                    viewModel.pingAllServers()
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (displayPing != null && displayPing > 0) "$displayPing ms" else "Benchmark",
+                                color = ElectricCyan,
+                                fontSize = 11.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Organized Workspace Organizer Tabs (Merges Private DNS DoT + Stack + Benchmark cleanly)
+            item {
+                ShieldWorkspaceSwitcher(
+                    selectedTab = workspaceTab,
+                    fastestMs = fastestMs,
+                    serverCount = uiState.vpnServers.size,
+                    onSelectTab = { workspaceTab = it }
+                )
+            }
+
+            if (workspaceTab == 0) {
+                // Workspace 0: Interactive Stack + Private DNS (DoT) Shield Card
+                if (!simpleMode) {
+                    item {
+                        InteractiveStackedDnsServers(
+                            servers = uiState.vpnServers,
+                            selectedServerId = uiState.selectedVpnServerId,
+                            isEngineActive = isAnyActive,
+                            isPinging = uiState.isPinging,
+                            onPingAll = { viewModel.pingAllServers() },
+                            onAutoSelectFastest = { viewModel.autoSelectFastestServer() },
+                            onServerSettledOnTop = { settledServer ->
+                                viewModel.activateServerFromDeck(
+                                    server = settledServer,
+                                    context = context,
+                                    onVpnPermissionRequired = { prepareIntent ->
+                                        vpnLauncher.launch(prepareIntent)
+                                    },
+                                    onPrivateDnsFallback = onFallbackRequired
+                                )
+                            }
                         )
                     }
                 }
 
-                UiModeHeaderSwitcher(
-                    isSimpleMode = uiState.simpleMode,
-                    onSelectSimpleMode = { enabled ->
-                        viewModel.setSimpleMode(enabled)
-                    }
-                )
-            }
-        }
-
-        // Sleek Sliding Pill Engine Mode Switcher
-        item {
-            EngineSegmentedSlider(
-                selectedMode = uiState.engineMode,
-                onSelectMode = { viewModel.setEngineMode(it) }
-            )
-        }
-
-        // Center Living Pulse Reactor
-        item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                HeroPulseButton(
-                    isActive = isAnyActive,
-                    activeHostOrServer = activeDisplayTarget,
-                    latencyMs = uiState.livePingMs,
-                    isAdGuardShield = isAdGuardDoT,
-                    onClick = {
-                        if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS) {
-                            if (isDoTActive) {
-                                viewModel.disablePrivateDns {
-                                    onLaunchWirelessSettings()
+                if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS || simpleMode) {
+                    item {
+                        AnimatedContent(
+                            targetState = uiState.engineMode,
+                            transitionSpec = {
+                                if (simpleMode) {
+                                    EnterTransition.None togetherWith ExitTransition.None
+                                } else {
+                                    val forward = targetState == DnsEngineMode.LOCAL_VPN
+                                    (slideInHorizontally(
+                                        animationSpec = spring(
+                                            dampingRatio = 0.86f,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        )
+                                    ) { width -> if (forward) width else -width } + fadeIn(tween(260)))
+                                        .togetherWith(
+                                            slideOutHorizontally(
+                                                animationSpec = spring(
+                                                    dampingRatio = 0.86f,
+                                                    stiffness = Spring.StiffnessMediumLow
+                                                )
+                                            ) { width -> if (forward) -width else width } + fadeOut(tween(200))
+                                        )
                                 }
-                            } else {
-                                val adguard = uiState.privatePresets.firstOrNull { it.isAdGuardShield }
-                                    ?: uiState.privatePresets.first()
-                                viewModel.activatePrivateDnsPreset(adguard) { host ->
-                                    onFallbackRequired(host)
-                                }
-                            }
-                        } else {
-                            if (uiState.isVpnActive) {
-                                viewModel.stopVpn(context)
-                            } else {
-                                var prepareFailed = false
-                                val prepareIntent = try {
-                                    VpnService.prepare(context)
-                                } catch (e: Exception) {
-                                    prepareFailed = true
-                                    Toast.makeText(
-                                        context,
-                                        "VPN permission unavailable: ${e.localizedMessage}",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    null
-                                }
-                                if (!prepareFailed) {
-                                    if (prepareIntent != null) {
-                                        vpnLauncher.launch(prepareIntent)
-                                    } else {
-                                        viewModel.startVpn(context)
+                            },
+                            label = "engine_panel_slide"
+                        ) { mode ->
+                            if (mode == DnsEngineMode.PRIVATE_DNS) {
+                                PrivateDnsShieldCard(
+                                    privateDnsState = uiState.privateDnsState,
+                                    presets = uiState.privatePresets,
+                                    selectedHostname = uiState.selectedDotPreset,
+                                    onActivatePreset = { preset ->
+                                        viewModel.activatePrivateDnsPreset(preset) { host ->
+                                            onFallbackRequired(host)
+                                        }
+                                    },
+                                    onDisablePrivateDns = {
+                                        viewModel.disablePrivateDns {
+                                            onLaunchWirelessSettings()
+                                        }
+                                    },
+                                    onOpenExpertGuide = { showExpertSheet = true },
+                                    onLaunchWirelessSettings = onLaunchWirelessSettings
+                                )
+                            } else if (simpleMode) {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    uiState.vpnServers.forEach { server ->
+                                        DnsServerCard(
+                                            profile = server,
+                                            isSelected = uiState.selectedVpnServerId == server.id,
+                                            onSelect = { viewModel.selectVpnServer(server.id) }
+                                        )
                                     }
                                 }
                             }
                         }
                     }
-                )
-            }
-        }
-
-        // Live Telemetry Ribbon
-        item {
-            val statusTint = when {
-                !isAnyActive -> CrimsonPulse
-                isAdGuardDoT -> EmeraldMint
-                else -> ElectricCyan
-            }
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 16.dp,
-                borderColor = statusTint.copy(alpha = 0.45f),
-                breathingGlow = !simpleMode && isAnyActive
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .alpha(if (isAnyActive) liveDotPulse else 0.7f)
-                                .clip(CircleShape)
-                                .background(statusTint)
-                        )
-                        Spacer(modifier = Modifier.width(9.dp))
-                        Column {
-                            Text(
-                                text = if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS)
-                                    "ENCRYPTED DoT ENDPOINT"
-                                else
-                                    "LOCAL VPN TUNNEL NODE",
-                                color = TextSecondary,
-                                fontSize = 9.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp
-                            )
-                            Text(
-                                text = activeDisplayTarget,
-                                color = TextPrimary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(ElectricCyan.copy(alpha = 0.12f))
-                            .clickable { onNavigateToServers() }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = if (uiState.livePingMs != null && uiState.livePingMs > 0)
-                                "${uiState.livePingMs} ms"
-                            else
-                                "Ping",
-                            color = ElectricCyan,
-                            fontSize = 11.5.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                 }
-            }
-        }
+            } else {
+                // Workspace 1: Integrated Benchmark Telemetry & Full Resolver Profiles
+                item {
+                    BenchmarkTelemetryCard(
+                        servers = uiState.vpnServers,
+                        isPinging = uiState.isPinging,
+                        onPingAll = { viewModel.pingAllServers() },
+                        onAutoSelectFastest = { viewModel.autoSelectFastestServer() },
+                        onAddCustomClick = { showAddCustomDialog = true }
+                    )
+                }
 
-        // Interactive Stacked DNS Servers Carousel (hidden in Simple Mode)
-        if (!simpleMode) {
-            item {
-                InteractiveStackedDnsServers(
-                    servers = uiState.vpnServers,
-                    selectedServerId = uiState.selectedVpnServerId,
-                    isEngineActive = isAnyActive,
-                    isPinging = uiState.isPinging,
-                    onPingAll = { viewModel.pingAllServers() },
-                    onAutoSelectFastest = { viewModel.autoSelectFastestServer() },
-                    onServerSettledOnTop = { settledServer ->
-                        viewModel.activateServerFromDeck(
-                            server = settledServer,
-                            context = context,
-                            onVpnPermissionRequired = { prepareIntent ->
-                                vpnLauncher.launch(prepareIntent)
-                            },
-                            onPrivateDnsFallback = onFallbackRequired
-                        )
-                    }
-                )
-            }
-        }
-
-        // Smooth Horizontal Slide Between Private DNS Controls & (Simple Mode fallback only)
-        if (uiState.engineMode == DnsEngineMode.PRIVATE_DNS || simpleMode) {
-            item {
-                AnimatedContent(
-                    targetState = uiState.engineMode,
-                    transitionSpec = {
-                        if (simpleMode) {
-                            EnterTransition.None togetherWith ExitTransition.None
-                        } else {
-                            val forward = targetState == DnsEngineMode.LOCAL_VPN
-                            (slideInHorizontally(
-                                animationSpec = spring(
-                                    dampingRatio = 0.86f,
-                                    stiffness = Spring.StiffnessMediumLow
-                                )
-                            ) { width -> if (forward) width else -width } + fadeIn(tween(260)))
-                                .togetherWith(
-                                    slideOutHorizontally(
-                                        animationSpec = spring(
-                                            dampingRatio = 0.86f,
-                                            stiffness = Spring.StiffnessMediumLow
-                                        )
-                                    ) { width -> if (forward) -width else width } + fadeOut(tween(200))
-                                )
+                items(uiState.vpnServers, key = { "bench_${it.id}" }) { server ->
+                    DnsServerCard(
+                        profile = server,
+                        isSelected = uiState.selectedVpnServerId == server.id,
+                        onSelect = {
+                            viewModel.activateServerFromDeck(
+                                server = server,
+                                context = context,
+                                onVpnPermissionRequired = { prepareIntent ->
+                                    vpnLauncher.launch(prepareIntent)
+                                },
+                                onPrivateDnsFallback = onFallbackRequired
+                            )
                         }
-                    },
-                    label = "engine_panel_slide"
-                ) { mode ->
-                    if (mode == DnsEngineMode.PRIVATE_DNS) {
-                        PrivateDnsShieldCard(
-                            privateDnsState = uiState.privateDnsState,
-                            presets = uiState.privatePresets,
-                            selectedHostname = uiState.selectedDotPreset,
-                            onActivatePreset = { preset ->
-                                viewModel.activatePrivateDnsPreset(preset) { host ->
-                                    onFallbackRequired(host)
-                                }
-                            },
-                            onDisablePrivateDns = {
-                                viewModel.disablePrivateDns {
-                                    onLaunchWirelessSettings()
-                                }
-                            },
-                            onOpenExpertGuide = { showExpertSheet = true },
-                            onLaunchWirelessSettings = onLaunchWirelessSettings
-                        )
-                    } else if (simpleMode) {
-                        // Simple Mode has no stack, so provide flat server selection cards cleanly
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            uiState.vpnServers.forEach { server ->
-                                DnsServerCard(
-                                    profile = server,
-                                    isSelected = uiState.selectedVpnServerId == server.id,
-                                    onSelect = { viewModel.selectVpnServer(server.id) }
-                                )
-                            }
-                        }
-                    }
+                    )
                 }
             }
         }
@@ -437,6 +500,137 @@ fun HomeScreen(
             onGrantViaShizuku = { viewModel.grantPermissionViaShizuku() },
             onDismiss = { showExpertSheet = false }
         )
+    }
+
+    if (showAddCustomDialog) {
+        AddCustomServerSheet(
+            onDismiss = { showAddCustomDialog = false },
+            onAdd = { name, p4, s4, p6, dot ->
+                viewModel.addCustomServer(name, p4, s4, p6, dot)
+                showAddCustomDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun ShieldWorkspaceSwitcher(
+    selectedTab: Int,
+    fastestMs: Long?,
+    serverCount: Int,
+    onSelectTab: (Int) -> Unit
+) {
+    val simpleMode = LocalSimpleMode.current
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(GlassSurface)
+            .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
+            .padding(4.dp)
+            .testTag("shield_workspace_switcher")
+    ) {
+        val segmentWidth = maxWidth / 2
+        val indicatorOffset = if (simpleMode) {
+            segmentWidth * selectedTab
+        } else {
+            val animOffset by animateDpAsState(
+                targetValue = segmentWidth * selectedTab,
+                animationSpec = spring(
+                    dampingRatio = 0.82f,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "workspace_tab_offset"
+            )
+            animOffset
+        }
+
+        val activeAccent = if (selectedTab == 0) ElectricCyan else HoloViolet
+        Box(
+            modifier = Modifier
+                .offset(x = indicatorOffset)
+                .width(segmentWidth)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            activeAccent.copy(alpha = 0.24f),
+                            EmeraldMint.copy(alpha = 0.14f)
+                        )
+                    )
+                )
+                .border(1.dp, activeAccent.copy(alpha = 0.50f), RoundedCornerShape(12.dp))
+        )
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(color = ElectricCyan),
+                        onClick = { onSelectTab(0) }
+                    )
+                    .testTag("workspace_tab_dot_shield"),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Layers,
+                        contentDescription = null,
+                        tint = if (selectedTab == 0) ElectricCyan else TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.workspace_tab_dot_shield),
+                        color = if (selectedTab == 0) TextPrimary else TextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(color = HoloViolet),
+                        onClick = { onSelectTab(1) }
+                    )
+                    .testTag("workspace_tab_benchmark"),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = null,
+                        tint = if (selectedTab == 1) HoloViolet else TextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    val benchLabel = stringResource(R.string.workspace_tab_benchmark)
+                    val suffix = if (fastestMs != null && fastestMs > 0L) "${fastestMs}ms" else "$serverCount"
+                    Text(
+                        text = "$benchLabel • $suffix",
+                        color = if (selectedTab == 1) TextPrimary else TextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -471,7 +665,6 @@ private fun EngineSegmentedSlider(
             animatedOffset
         }
 
-        // Sliding luminous pill
         Box(
             modifier = Modifier
                 .offset(x = indicatorOffset)

@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -52,11 +52,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Analytics
-import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -84,6 +84,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -95,8 +96,8 @@ import com.example.ui.components.BreathingAtmosphere
 import com.example.ui.components.GlassCard
 import com.example.ui.components.UpdateDialog
 import com.example.ui.screens.AnalyticsScreen
+import com.example.ui.screens.AuthenticatorScreen
 import com.example.ui.screens.HomeScreen
-import com.example.ui.screens.ServersScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.AppThemeStyle
 import com.example.ui.theme.DarkSurfaceElevated
@@ -131,7 +132,7 @@ private data class NavTabSpec(
     val contentDesc: String
 )
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val viewModel: DnsPulseViewModel by viewModels()
     private var isFullScreenEnabled: Boolean = false
@@ -246,7 +247,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Pressing back from Benchmark or Settings smoothly slides back to Home (Shield)
+                // Pressing back from Authenticator, Analytics, or Settings smoothly slides back to Home (Shield)
                 BackHandler(enabled = pagerState.currentPage != 0) {
                     slideToPage(0)
                 }
@@ -412,10 +413,9 @@ class MainActivity : ComponentActivity() {
                                                 } catch (_: Exception) {
                                                     startActivity(Intent(Settings.ACTION_SETTINGS))
                                                 }
-                                            },
-                                            onNavigateToServers = { slideToPage(1) }
+                                            }
                                         )
-                                        1 -> ServersScreen(
+                                        1 -> AuthenticatorScreen(
                                             uiState = uiState,
                                             viewModel = viewModel
                                         )
@@ -448,7 +448,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .windowInsetsPadding(stableNavInsets)
-                                    .padding(horizontal = 14.dp, vertical = 14.dp)
+                                    .padding(horizontal = 10.dp, vertical = 14.dp)
                             )
                         }
                     }
@@ -476,6 +476,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         configureHighRefreshRate()
         viewModel.refreshSystemPrivateDnsState()
+        viewModel.refreshAuthenticatorEnvironment()
     }
 }
 
@@ -490,7 +491,7 @@ private fun FloatingPulseNavBar(
     val tabs = remember {
         listOf(
             NavTabSpec(0, "Shield", Icons.Filled.Home, Icons.Outlined.Home, "nav_item_home", "Shield"),
-            NavTabSpec(1, "Benchmark", Icons.Filled.Dns, Icons.Outlined.Dns, "nav_item_servers", "Benchmark"),
+            NavTabSpec(1, "Authenticator", Icons.Filled.Fingerprint, Icons.Outlined.Fingerprint, "nav_item_authenticator", "Authenticator"),
             NavTabSpec(2, "Analytics", Icons.Filled.Analytics, Icons.Outlined.Analytics, "nav_item_analytics", "Analytics"),
             NavTabSpec(3, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "nav_item_settings", "Settings")
         )
@@ -520,7 +521,7 @@ private fun FloatingPulseNavBar(
     GlassCard(
         modifier = modifier
             .fillMaxWidth()
-            .widthIn(max = 500.dp)
+            .widthIn(max = 540.dp)
             .height(66.dp)
             .testTag("main_bottom_nav"),
         cornerRadius = 28.dp,
@@ -611,9 +612,11 @@ private fun FloatingPulseNavBar(
                         Text(
                             text = tab.label,
                             color = if (isSelected) TextPrimary else TextSecondary,
-                            fontSize = 9.5.sp,
+                            fontSize = 9.sp,
+                            letterSpacing = (-0.2).sp,
                             maxLines = 1,
                             softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
