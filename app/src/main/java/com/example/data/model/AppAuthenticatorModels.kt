@@ -1,5 +1,7 @@
 package com.example.data.model
 
+import androidx.compose.runtime.Immutable
+
 enum class BiometricHardwareStatus {
     READY,
     NO_ENROLLED_BIOMETRICS,
@@ -14,6 +16,7 @@ enum class AppFilterTab {
     SYSTEM_APPS
 }
 
+@Immutable
 data class InstalledAppItem(
     val packageName: String,
     val appName: String,
@@ -22,6 +25,7 @@ data class InstalledAppItem(
     val customRelockTimeoutSeconds: Int? = null
 )
 
+@Immutable
 data class AppAuthenticatorConfig(
     val isMasterGuardEnabled: Boolean = false,
     val relockTimeoutSeconds: Int = 30,

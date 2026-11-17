@@ -33,6 +33,7 @@ import com.example.ui.theme.DarkSurfaceElevated
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassSurface
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalPageActive
 import com.example.ui.theme.LocalPulsePalette
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.paletteForTheme
@@ -100,9 +101,10 @@ fun GlassCard(
         label = "glass_bg_color"
     )
 
-    val needsContinuousAnim = breathingGlow ||
+    val pageActive = LocalPageActive.current
+    val needsContinuousAnim = pageActive && (breathingGlow ||
         (!isStackCard && (themeStyle == AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS ||
-            themeStyle == AppThemeStyle.SYNTHWAVE_84))
+            themeStyle == AppThemeStyle.SYNTHWAVE_84)))
     val animPhase = if (needsContinuousAnim) {
         val transition = rememberInfiniteTransition(label = "card_optic_anim")
         val value by transition.animateFloat(

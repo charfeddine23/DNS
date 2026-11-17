@@ -1,5 +1,7 @@
 package com.example.data.model
 
+import androidx.compose.runtime.Immutable
+
 enum class DnsEngineMode {
     PRIVATE_DNS, // System Private DNS (DNS-over-TLS)
     LOCAL_VPN    // Local VPN DNS Switcher
@@ -12,6 +14,7 @@ enum class LatencyStatus {
     UNKNOWN
 }
 
+@Immutable
 data class DnsServerProfile(
     val id: String,
     val name: String,
@@ -34,6 +37,7 @@ data class DnsServerProfile(
         }
 }
 
+@Immutable
 data class PrivateDnsPreset(
     val id: String,
     val name: String,

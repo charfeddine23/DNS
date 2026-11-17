@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -66,6 +67,7 @@ import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalPageActive
 import com.example.ui.theme.LocalPulsePalette
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
@@ -81,6 +83,7 @@ fun HeroPulseButton(
     modifier: Modifier = Modifier
 ) {
     val simpleMode = LocalSimpleMode.current
+    val pageActive = LocalPageActive.current
     val themeStyle = LocalAppThemeStyle.current
     val palette = LocalPulsePalette.current
     val isDark = palette.isDark
@@ -162,7 +165,7 @@ fun HeroPulseButton(
         label = "hero_glow_color"
     )
 
-    val pressScale by animateFloatAsState(
+    val pressScaleState = animateFloatAsState(
         targetValue = if (isPressed) 0.93f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -171,55 +174,69 @@ fun HeroPulseButton(
         label = "hero_press_scale"
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse_reactor")
+    val coreBreathState: androidx.compose.runtime.State<Float>
+    val orbitAngleState: androidx.compose.runtime.State<Float>
+    val wave1State: androidx.compose.runtime.State<Float>
+    val wave2State: androidx.compose.runtime.State<Float>
+    val wave3State: androidx.compose.runtime.State<Float>
 
-    val coreBreath by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = if (isActive) 1.038f else 1.018f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (isActive) 1900 else 2800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "core_breath"
-    )
+    if (pageActive) {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse_reactor")
 
-    val orbitAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (isActive) 5500 else 14000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "orbit_angle"
-    )
+        coreBreathState = infiniteTransition.animateFloat(
+            initialValue = 1.0f,
+            targetValue = if (isActive) 1.038f else 1.018f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = if (isActive) 1900 else 2800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "core_breath"
+        )
 
-    val wave1 by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2600, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "wave1"
-    )
-    val wave2 by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2600, delayMillis = 850, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "wave2"
-    )
-    val wave3 by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2600, delayMillis = 1700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "wave3"
-    )
+        orbitAngleState = infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = if (isActive) 5500 else 14000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "orbit_angle"
+        )
+
+        wave1State = infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "wave1"
+        )
+        wave2State = infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2600, delayMillis = 850, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "wave2"
+        )
+        wave3State = infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2600, delayMillis = 1700, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "wave3"
+        )
+    } else {
+        coreBreathState = remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+        orbitAngleState = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        wave1State = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        wave2State = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        wave3State = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    }
 
     val coreFillBrush = when (themeStyle) {
         AppThemeStyle.NEUMORPHISM -> Brush.linearGradient(
@@ -349,9 +366,18 @@ fun HeroPulseButton(
         Canvas(modifier = Modifier.size(256.dp)) {
             val centerOffset = Offset(size.width / 2, size.height / 2)
             val baseRadius = size.width * 0.34f
+            val orbitAngle = orbitAngleState.value
 
             if (isActive) {
-                listOf(wave1, wave2, wave3).forEach { progress ->
+                val w1 = wave1State.value
+                val w2 = wave2State.value
+                val w3 = wave3State.value
+                for (i in 0..2) {
+                    val progress = when (i) {
+                        0 -> w1
+                        1 -> w2
+                        else -> w3
+                    }
                     val radius = baseRadius + progress * (size.width * 0.16f)
                     val alpha = (1f - progress) * 0.45f
                     drawCircle(
@@ -398,7 +424,11 @@ fun HeroPulseButton(
         Box(
             modifier = Modifier
                 .size(198.dp)
-                .scale(coreBreath)
+                .graphicsLayer {
+                    val b = coreBreathState.value
+                    scaleX = b
+                    scaleY = b
+                }
                 .background(
                     brush = Brush.radialGradient(
                         colors = listOf(
@@ -415,7 +445,11 @@ fun HeroPulseButton(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(164.dp)
-                .scale(pressScale * coreBreath)
+                .graphicsLayer {
+                    val s = pressScaleState.value * coreBreathState.value
+                    scaleX = s
+                    scaleY = s
+                }
                 .shadow(
                     elevation = if (isActive) 22.dp else 10.dp,
                     shape = CircleShape,

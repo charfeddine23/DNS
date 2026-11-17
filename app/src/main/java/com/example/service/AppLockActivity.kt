@@ -245,7 +245,7 @@ private fun AppLockGateScreen(
                 isProtected = true,
                 isAdGuardShield = true,
                 ambientGlowEnabled = true,
-                pageOffsetFraction = 0f
+                pageOffsetFractionProvider = { 0f }
             )
         }
 

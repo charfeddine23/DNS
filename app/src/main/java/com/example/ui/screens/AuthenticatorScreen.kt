@@ -88,7 +88,9 @@ fun AuthenticatorScreen(
 
     LaunchedEffect(Unit) {
         viewModel.refreshAuthenticatorEnvironment()
-        viewModel.loadInstalledApps()
+        if (uiState.installedApps.isEmpty() && !uiState.isLoadingApps) {
+            viewModel.loadInstalledApps()
+        }
     }
 
     val filteredApps = remember(uiState.installedApps, searchQuery, selectedFilter) {

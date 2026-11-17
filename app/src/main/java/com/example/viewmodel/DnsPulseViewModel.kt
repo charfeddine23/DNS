@@ -3,6 +3,7 @@ package com.example.viewmodel
 import android.app.Application
 import android.content.Context
 import android.net.VpnService
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+@Immutable
 data class HomeUiState(
     val engineMode: DnsEngineMode = DnsEngineMode.PRIVATE_DNS,
     val privateDnsState: PrivateDnsState = PrivateDnsState(PrivateDnsMode.Opportunistic, null, false),

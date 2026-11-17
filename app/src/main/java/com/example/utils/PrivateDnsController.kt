@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.util.Log
+import androidx.compose.runtime.Immutable
 
 sealed class PrivateDnsMode(val rawValue: String) {
     object Off : PrivateDnsMode("off")
@@ -25,6 +26,7 @@ sealed class PrivateDnsMode(val rawValue: String) {
     }
 }
 
+@Immutable
 data class PrivateDnsState(
     val mode: PrivateDnsMode,
     val hostname: String?,

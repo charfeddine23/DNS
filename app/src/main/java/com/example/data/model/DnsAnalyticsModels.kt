@@ -1,7 +1,9 @@
 package com.example.data.model
 
+import androidx.compose.runtime.Immutable
 import com.example.service.DnsTrafficCategory
 
+@Immutable
 data class DomainStatItem(
     val domain: String,
     val hits: Long,
@@ -9,6 +11,7 @@ data class DomainStatItem(
     val category: DnsTrafficCategory
 )
 
+@Immutable
 data class HourlyTrafficBucket(
     val epochHour: Long,
     val label: String,
@@ -17,6 +20,7 @@ data class HourlyTrafficBucket(
     val adsBlocked: Long
 )
 
+@Immutable
 data class RecentDnsEvent(
     val domain: String,
     val category: DnsTrafficCategory,
@@ -25,6 +29,7 @@ data class RecentDnsEvent(
     val timestampMs: Long
 )
 
+@Immutable
 data class DnsAnalyticsSnapshot(
     val totalQueries: Long = 0L,
     val adsReachedCount: Long = 0L,

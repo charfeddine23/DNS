@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -68,6 +69,7 @@ import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassSurface
+import com.example.ui.theme.LocalPageActive
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -112,10 +114,11 @@ fun HomeScreen(
         uiState.vpnServers.mapNotNull { it.latencyMs }.filter { it > 0L }.minOrNull()
     }
 
-    val liveDotPulse = if (simpleMode) {
-        1f
+    val pageActive = LocalPageActive.current
+    val liveDotPulseState = if (simpleMode || !pageActive || !isAnyActive) {
+        remember { androidx.compose.runtime.mutableFloatStateOf(if (isAnyActive) 1f else 0.7f) }
     } else {
-        val animatedPulse by rememberInfiniteTransition(label = "live_dot").animateFloat(
+        rememberInfiniteTransition(label = "live_dot").animateFloat(
             initialValue = 0.35f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
@@ -124,7 +127,6 @@ fun HomeScreen(
             ),
             label = "live_dot_alpha"
         )
-        animatedPulse
     }
 
     Box(
@@ -289,7 +291,9 @@ fun HomeScreen(
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
-                                    .alpha(if (isAnyActive) liveDotPulse else 0.7f)
+                                    .graphicsLayer {
+                                        alpha = if (isAnyActive) liveDotPulseState.value else 0.7f
+                                    }
                                     .clip(CircleShape)
                                     .background(statusTint)
                             )

@@ -1,5 +1,6 @@
 package com.example.ui.theme
 
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 
 enum class AppAppearanceMode(
@@ -70,3 +71,4 @@ enum class AppThemeStyle(
 val LocalAppThemeStyle = staticCompositionLocalOf { AppThemeStyle.CHROMATIC_FROSTED_LIQUID }
 val LocalSimpleMode = staticCompositionLocalOf { false }
 val LocalIsDarkTheme = staticCompositionLocalOf { true }
+val LocalPageActive = compositionLocalOf { true }

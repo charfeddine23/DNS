@@ -23,6 +23,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,10 +32,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -85,6 +86,7 @@ import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.HoloMagenta
 import com.example.ui.theme.HoloViolet
+import com.example.ui.theme.LocalPageActive
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.OnAccentInk
 import com.example.ui.theme.SubtleSurfaceFill
@@ -111,31 +113,45 @@ fun SettingsScreen(
         powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Transparent)
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState())
+            .background(Color.Transparent),
+        contentAlignment = Alignment.TopCenter
     ) {
-        Spacer(modifier = Modifier.height(8.dp))
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 720.dp)
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(bottom = 110.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Settings & Diagnostics",
+                        color = TextPrimary,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        text = "Configure themes, living aura, and background protection",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
 
-        Text(
-            text = "Settings & Diagnostics",
-            color = TextPrimary,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-        Text(
-            text = "Configure themes, living aura, and background protection",
-            color = TextSecondary,
-            fontSize = 12.sp
-        )
+            item {
+                Column {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    SectionLabel("NETWORK & SYSTEM")
+                }
+            }
 
-        Spacer(modifier = Modifier.height(18.dp))
-
-        SectionLabel("NETWORK & SYSTEM")
-        Spacer(modifier = Modifier.height(8.dp))
+            item {
 
         // System Private DNS shortcut card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -179,18 +195,24 @@ fun SettingsScreen(
                 }
             }
         }
+        }
 
-        Spacer(modifier = Modifier.height(18.dp))
-        SectionLabel("APPEARANCE & MULTI-THEME ENGINE")
-        Spacer(modifier = Modifier.height(8.dp))
+        item {
+            Column {
+                Spacer(modifier = Modifier.height(6.dp))
+                SectionLabel("APPEARANCE & MULTI-THEME ENGINE")
+            }
+        }
 
-        AppearanceModeSelectorCard(
-            selectedMode = uiState.appearanceMode,
-            simpleMode = simpleMode,
-            onSelectMode = { viewModel.setAppearanceMode(it) }
-        )
+        item {
+            AppearanceModeSelectorCard(
+                selectedMode = uiState.appearanceMode,
+                simpleMode = simpleMode,
+                onSelectMode = { viewModel.setAppearanceMode(it) }
+            )
+        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        item {
 
         // Multi-Theme Engine Card
         GlassCard(
@@ -264,8 +286,9 @@ fun SettingsScreen(
                 }
             }
         }
+        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        item {
 
         // Simple Mode Card
         GlassCard(
@@ -307,8 +330,9 @@ fun SettingsScreen(
                 )
             }
         }
+        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        item {
 
         // Full Screen Background Card
         GlassCard(
@@ -350,10 +374,16 @@ fun SettingsScreen(
                 )
             }
         }
+        }
 
-        Spacer(modifier = Modifier.height(18.dp))
-        SectionLabel("ENGINE & AUTOMATION")
-        Spacer(modifier = Modifier.height(8.dp))
+        item {
+            Column {
+                Spacer(modifier = Modifier.height(6.dp))
+                SectionLabel("ENGINE & AUTOMATION")
+            }
+        }
+
+        item {
 
         // Preferences Toggles
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -424,8 +454,9 @@ fun SettingsScreen(
                 }
             }
         }
+        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        item {
 
         // Background Keep-Alive / Battery Optimization Card
         GlassCard(
@@ -483,10 +514,16 @@ fun SettingsScreen(
                 }
             }
         }
+        }
 
-        Spacer(modifier = Modifier.height(18.dp))
-        SectionLabel("UPDATES & DEVELOPER")
-        Spacer(modifier = Modifier.height(8.dp))
+        item {
+            Column {
+                Spacer(modifier = Modifier.height(6.dp))
+                SectionLabel("UPDATES & DEVELOPER")
+            }
+        }
+
+        item {
 
         // Check for Updates Card
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -531,13 +568,12 @@ fun SettingsScreen(
                 }
             }
         }
+        }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Luxurious, Luminous, Dynamic Developer Showcase Container
-        DeveloperShowcaseCard()
-
-        Spacer(modifier = Modifier.height(110.dp))
+        item {
+            DeveloperShowcaseCard()
+        }
+        }
     }
 
     if (showThemeSheet) {
@@ -552,6 +588,7 @@ fun SettingsScreen(
 @Composable
 private fun DeveloperShowcaseCard() {
     val simpleMode = LocalSimpleMode.current
+    val pageActive = LocalPageActive.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale = if (simpleMode) {
@@ -571,7 +608,7 @@ private fun DeveloperShowcaseCard() {
     var sweepPhase = 0f
     var orbitRotation = 0f
     var pulseGlow = 0.65f
-    if (!simpleMode) {
+    if (!simpleMode && pageActive) {
         val infiniteTransition = rememberInfiniteTransition(label = "dev_showcase_glow")
         val animSweep by infiniteTransition.animateFloat(
             initialValue = 0f,
