@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "DNS Pulse"
+rootProject.name = "Vortex Dns"
 
 include(":app")

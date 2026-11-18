@@ -76,7 +76,7 @@ class DnsPulseTileService : TileService() {
         val isActive = isAdGuardDoT || vpnActive
 
         tile.state = if (isActive) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        tile.label = "DNS Pulse"
+        tile.label = "Vortex Dns"
         tile.subtitle = when {
             isAdGuardDoT -> "DoT: AdGuard Active"
             vpnActive -> "VPN: Active"

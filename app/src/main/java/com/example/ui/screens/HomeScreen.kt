@@ -160,7 +160,7 @@ fun HomeScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Bolt,
-                                contentDescription = "DNS Pulse",
+                                contentDescription = "Vortex Dns",
                                 tint = ElectricCyan,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -168,7 +168,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(11.dp))
                         Column {
                             Text(
-                                text = "DNS PULSE",
+                                text = "VORTEX DNS",
                                 color = TextPrimary,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 19.sp,

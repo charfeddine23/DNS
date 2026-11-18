@@ -256,7 +256,7 @@ class DnsVpnService : VpnService() {
             secondaryIpv6: String = ""
         ) {
             val config = PersistedVpnConfig(
-                serverName = serverName.ifBlank { "DNS Pulse" },
+                serverName = serverName.ifBlank { "Vortex Dns" },
                 primaryIpv4 = primaryIpv4.trim().ifBlank { DEFAULT_UPSTREAM_IPV4 },
                 secondaryIpv4 = secondaryIpv4.trim(),
                 primaryIpv6 = primaryIpv6.trim(),
@@ -326,7 +326,7 @@ class DnsVpnService : VpnService() {
             }
             ACTION_START -> {
                 val config = PersistedVpnConfig(
-                    serverName = intent.getStringExtra(EXTRA_SERVER_NAME)?.takeIf { it.isNotBlank() } ?: "DNS Pulse",
+                    serverName = intent.getStringExtra(EXTRA_SERVER_NAME)?.takeIf { it.isNotBlank() } ?: "Vortex Dns",
                     primaryIpv4 = intent.getStringExtra(EXTRA_PRIMARY_IPV4)?.trim()?.takeIf { it.isNotBlank() } ?: DEFAULT_UPSTREAM_IPV4,
                     secondaryIpv4 = intent.getStringExtra(EXTRA_SECONDARY_IPV4).orEmpty().trim(),
                     primaryIpv6 = intent.getStringExtra(EXTRA_PRIMARY_IPV6).orEmpty().trim(),
@@ -352,7 +352,7 @@ class DnsVpnService : VpnService() {
     private fun ensureForegroundBeforeStopOnOreo() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInForeground) {
             try {
-                startForegroundCompat(buildNotification("DNS Pulse"))
+                startForegroundCompat(buildNotification("Vortex Dns"))
             } catch (_: Throwable) {}
         }
     }
@@ -504,7 +504,7 @@ class DnsVpnService : VpnService() {
         var session: TunnelSession? = null
         try {
             val builder = Builder().apply {
-                setSession("DNS Pulse (${config.serverName})")
+                setSession("Vortex Dns (${config.serverName})")
                 setMtu(1500)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     setMetered(false)
@@ -918,10 +918,10 @@ class DnsVpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "DNS Pulse Active Protection",
+                "Vortex Dns Active Protection",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows live status of active DNS Pulse VPN tunnel"
+                description = "Shows live status of active Vortex Dns VPN tunnel"
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
@@ -950,7 +950,7 @@ class DnsVpnService : VpnService() {
         )
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("DNS Pulse Protection Active")
+            .setContentTitle("Vortex Dns Protection Active")
             .setContentText("Routing DNS queries via $serverName")
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
             .setOngoing(true)

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">DNS Pulse</string>
+    <string name="app_name">Vortex Dns</string>
     <string name="update_close_desc">إغلاق</string>
     <string name="update_title_available">تحديث جديد متاح</string>
     <string name="update_subtitle_new">تحديث جديد</string>
@@ -78,10 +78,10 @@
     <string name="auth_service_active">App Lock Monitor Active</string>
     <string name="auth_service_active_desc">Instant biometric lock triggers automatically when a protected app opens.</string>
     <string name="auth_service_needed">Enable App Lock Service</string>
-    <string name="auth_service_needed_desc">Grant Accessibility access to DNS Pulse so it detects protected apps when launched.</string>
+    <string name="auth_service_needed_desc">Grant Accessibility access to Vortex Dns so it detects protected apps when launched.</string>
     <string name="auth_service_enable_btn">Enable Service</string>
-    <string name="auth_accessibility_service_label">DNS Pulse App Authenticator</string>
-    <string name="auth_accessibility_service_desc">Detects when a fingerprint-locked app opens so DNS Pulse can prompt biometric verification before access.</string>
+    <string name="auth_accessibility_service_label">Vortex Dns App Authenticator</string>
+    <string name="auth_accessibility_service_desc">Detects when a fingerprint-locked app opens so Vortex Dns can prompt biometric verification before access.</string>
     <string name="auth_stat_protected">Protected</string>
     <string name="auth_stat_unlocks">Unlocks</string>
     <string name="auth_stat_blocked">Prompts</string>

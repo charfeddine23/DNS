@@ -337,7 +337,7 @@ class MainActivity : FragmentActivity() {
                                 pendingApkInstall = apkFile
                                 Toast.makeText(
                                     this@MainActivity,
-                                    "Please allow \"Install unknown apps\" for DNS Pulse to update.",
+                                    "Please allow \"Install unknown apps\" for Vortex Dns to update.",
                                     Toast.LENGTH_LONG
                                 ).show()
                                 try {

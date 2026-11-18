@@ -180,7 +180,7 @@ fun ExpertModeBottomSheet(
                             ShizukuStatus.AUTHORIZED ->
                                 "Shizuku Service is actively bridging system DNS settings. Private DNS switches silently without root or manual settings prompts."
                             ShizukuStatus.WAITING_PERMISSION ->
-                                "Shizuku is running! Tap the button below to authorize DNS Pulse."
+                                "Shizuku is running! Tap the button below to authorize Vortex Dns."
                             ShizukuStatus.NOT_AVAILABLE ->
                                 "Shizuku is not running on this device. You can start it via Wireless Debugging or use the ADB command below."
                             ShizukuStatus.UNSUPPORTED ->

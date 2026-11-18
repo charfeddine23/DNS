@@ -64,7 +64,7 @@
     <string name="auth_service_needed">تفعيل خدمة مراقبة التطبيقات</string>
     <string name="auth_service_needed_desc">اسمح لخدمة إمكانية الوصول بالعمل لرصد فتح التطبيقات المحمية وطلب البصمة فوراً.</string>
     <string name="auth_service_enable_btn">تفعيل الخدمة</string>
-    <string name="auth_accessibility_service_label">DNS Pulse - قفل البصمة للتطبيقات</string>
+    <string name="auth_accessibility_service_label">Vortex Dns - قفل البصمة للتطبيقات</string>
     <string name="auth_accessibility_service_desc">يرصد فتح التطبيقات المحمية بالبصمة لعرض شاشة التحقق بالبصمة قبل الدخول إليها.</string>
     <string name="auth_stat_protected">محمية</string>
     <string name="auth_stat_unlocks">مرات الفتح</string>
