@@ -5,46 +5,39 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Globe top hemisphere wireframe above DNS -->
-    <path
-        android:pathData="M 35.5,47.0 A 19.0,19.0 0 0,1 72.5,47.0"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round"
-        android:strokeWidth="2.1" />
-    <path
-        android:pathData="M 43.2,47.0 C 43.8,37.0 48.2,29.8 54.0,28.2 C 59.8,29.8 64.2,37.0 64.8,47.0"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round"
-        android:strokeWidth="1.9" />
-    <path
-        android:pathData="M 54.0,28.2 L 54.0,47.0"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round"
-        android:strokeWidth="2.0" />
-    <path
-        android:pathData="M 38.6,37.8 Q 54.0,42.5 69.4,37.8"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round"
-        android:strokeWidth="1.8" />
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.86"
+        android:scaleY="0.86">
 
-    <!-- Bold geometric "D" -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M 28.0,50.0 L 38.2,50.0 C 42.1,50.0 44.3,52.4 44.3,56.5 C 44.3,60.6 42.1,63.0 38.2,63.0 L 28.0,63.0 Z M 32.0,53.2 L 32.0,59.8 L 37.6,59.8 C 39.6,59.8 40.5,58.6 40.5,56.5 C 40.5,54.4 39.6,53.2 37.6,53.2 Z" />
+        <!-- Stem -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M 52.2,59.8 C 52.1,54.5 52.6,50.8 53.8,47.2 L 55.6,47.6 C 55.2,51.2 55.6,54.8 56.2,59.8 C 56.3,60.7 52.1,60.7 52.2,59.8 Z" />
 
-    <!-- Bold geometric "N" -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M 47.0,50.0 L 51.2,50.0 L 57.1,57.8 L 57.1,50.0 L 61.0,50.0 L 61.0,63.0 L 56.9,63.0 L 50.9,55.1 L 50.9,63.0 L 47.0,63.0 Z" />
+        <!-- Left Leaf with clean midrib vein cutout -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M 53.6,54.8 C 43.2,54.2 31.8,50.4 27.6,41.6 C 24.8,35.6 25.4,29.6 27.4,27.6 C 34.4,26.4 45.4,31.0 51.6,41.8 C 53.4,45.0 54.2,49.4 53.6,54.8 Z M 51.2,51.8 C 44.6,46.0 37.8,38.8 31.4,31.4 C 30.8,32.2 31.0,32.8 31.6,33.4 C 37.6,40.4 44.0,47.2 50.4,52.6 Z" />
 
-    <!-- Bold geometric "S" -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M 79.2,50.0 L 79.2,53.0 L 68.8,53.0 C 67.7,53.0 67.2,53.4 67.2,54.1 C 67.2,54.8 67.7,55.1 68.8,55.1 L 75.5,55.1 C 78.3,55.1 79.8,56.5 79.8,59.0 C 79.8,61.6 78.2,63.0 75.3,63.0 L 63.6,63.0 L 63.6,60.0 L 74.4,60.0 C 75.6,60.0 76.1,59.6 76.1,58.9 C 76.1,58.2 75.6,57.9 74.4,57.9 L 67.7,57.9 C 65.0,57.9 63.5,56.5 63.5,54.0 C 63.5,51.4 65.0,50.0 67.8,50.0 Z" />
+        <!-- Right Leaf with clean midrib vein cutout -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M 54.6,52.8 C 54.2,46.8 55.4,41.8 58.0,37.4 C 64.0,27.2 74.4,24.2 81.2,25.8 C 83.0,28.0 83.2,34.4 80.0,40.4 C 75.4,49.2 64.4,52.6 54.6,52.8 Z M 56.4,50.8 C 63.0,45.0 70.0,37.8 76.6,30.2 C 77.2,29.4 76.6,28.8 75.8,29.4 C 69.4,36.6 62.6,43.8 55.8,49.6 Z" />
 
-    <!-- Sweeping Orbit Swoosh beneath & right of DNS -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M 28.0,63.2 C 25.4,67.6 29.8,73.8 41.2,73.8 C 56.8,73.8 76.4,63.4 81.8,49.8 C 84.4,43.2 80.5,37.8 70.6,37.4 C 76.8,39.6 78.8,43.8 76.8,49.2 C 72.2,61.2 54.4,70.2 40.6,70.2 C 32.0,70.2 28.6,66.4 28.0,63.2 Z" />
+        <!-- Bold "Dns" Monochrome Wordmark -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M 29.5,62.4 L 37.8,62.4 C 42.6,62.4 45.8,65.5 45.8,70.4 C 45.8,75.3 42.6,78.4 37.8,78.4 L 29.5,78.4 Z M 33.4,65.8 L 33.4,75.0 L 37.6,75.0 C 40.3,75.0 41.8,73.4 41.8,70.4 C 41.8,67.4 40.3,65.8 37.6,65.8 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M 48.0,66.4 L 51.6,66.4 L 51.6,68.1 C 52.6,66.8 54.1,66.1 55.9,66.1 C 59.1,66.1 61.1,68.2 61.1,71.6 L 61.1,78.4 L 57.3,78.4 L 57.3,72.1 C 57.3,70.2 56.3,69.3 54.6,69.3 C 52.9,69.3 51.8,70.4 51.8,72.3 L 51.8,78.4 L 48.0,78.4 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M 76.6,68.4 C 75.3,66.8 73.1,66.0 70.4,66.0 C 66.5,66.0 64.1,67.5 64.1,69.9 C 64.1,72.3 66.4,73.2 70.1,73.8 C 72.5,74.2 73.6,74.5 73.6,75.3 C 73.6,76.1 72.5,76.5 70.6,76.5 C 68.5,76.5 67.1,75.8 66.3,74.6 L 63.4,76.1 C 64.6,78.0 67.1,79.1 70.6,79.1 C 74.8,79.1 77.5,77.6 77.5,75.0 C 77.5,72.5 75.0,71.6 71.1,71.0 C 68.7,70.6 67.8,70.3 67.8,69.6 C 67.8,68.9 68.8,68.6 70.4,68.6 C 72.2,68.6 73.3,69.1 73.9,70.0 Z" />
+    </group>
 </vector>
