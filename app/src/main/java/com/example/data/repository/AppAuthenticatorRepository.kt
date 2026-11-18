@@ -34,8 +34,10 @@ class AppAuthenticatorRepository private constructor(
     private var totalUnlockCount: Long = 0L
     private var totalInterceptionCount: Long = 0L
 
-    // Tracks temporarily unlocked apps after successful biometric prompt
+    // Tracks temporarily unlocked apps after successful biometric prompt (for timed delays > 0)
     private val unlockedUntilMs = ConcurrentHashMap<String, Long>()
+    // Tracks Instant (0s) unlocked apps: Long.MAX_VALUE while active/foreground, or epoch deadline (now + 60_000ms) while idle in background
+    private val instantIdleDeadlines = ConcurrentHashMap<String, Long>()
     @Volatile
     private var activeForegroundUnlockedPkg: String? = null
     @Volatile
@@ -60,9 +62,12 @@ class AppAuthenticatorRepository private constructor(
             isMasterGuardEnabled = enabled
             if (!enabled) {
                 unlockedUntilMs.clear()
+                instantIdleDeadlines.clear()
                 activeForegroundUnlockedPkg = null
                 activeLockPromptPkg = null
+                activeLockPromptAtMs = 0L
                 lastUnlockedPkg = null
+                lastUnlockedAtMs = 0L
             }
             prefs.edit().putBoolean(KEY_MASTER_GUARD, enabled).apply()
             snapshot = buildConfigLocked()
@@ -78,14 +83,17 @@ class AppAuthenticatorRepository private constructor(
             } else {
                 protectedPackages.remove(packageName)
                 unlockedUntilMs.remove(packageName)
+                instantIdleDeadlines.remove(packageName)
                 if (activeForegroundUnlockedPkg == packageName) {
                     activeForegroundUnlockedPkg = null
                 }
                 if (activeLockPromptPkg == packageName) {
                     activeLockPromptPkg = null
+                    activeLockPromptAtMs = 0L
                 }
                 if (lastUnlockedPkg == packageName) {
                     lastUnlockedPkg = null
+                    lastUnlockedAtMs = 0L
                 }
             }
             prefs.edit().putStringSet(KEY_PROTECTED_PACKAGES, protectedPackages.toSet()).apply()
@@ -111,6 +119,9 @@ class AppAuthenticatorRepository private constructor(
             appRelockTimeouts[packageName] = sanitized
             if (sanitized == 0) {
                 unlockedUntilMs.remove(packageName)
+                instantIdleDeadlines.remove(packageName)
+            } else {
+                instantIdleDeadlines.remove(packageName)
             }
             persistAppTimeoutsLocked()
             snapshot = buildConfigLocked()
@@ -148,6 +159,14 @@ class AppAuthenticatorRepository private constructor(
         }
     }
 
+    fun getInstantUnlockedPackages(): Set<String> {
+        synchronized(lock) {
+            return instantIdleDeadlines.keys.filter { pkg ->
+                pkg in protectedPackages && getEffectiveRelockTimeoutSeconds(pkg) == 0
+            }.toSet()
+        }
+    }
+
     fun setLockPromptActive(packageName: String, nowMs: Long = System.currentTimeMillis()) {
         synchronized(lock) {
             activeLockPromptPkg = packageName
@@ -164,54 +183,116 @@ class AppAuthenticatorRepository private constructor(
         }
     }
 
-    fun shouldPromptLock(packageName: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+    fun shouldPromptLock(
+        packageName: String,
+        nowMs: Long = System.currentTimeMillis(),
+        isLockOverlayVisible: Boolean = true
+    ): Boolean {
         synchronized(lock) {
             if (!isMasterGuardEnabled) return false
             if (packageName !in protectedPackages) {
                 return false
             }
 
-            // Do not stack or re-trigger lock prompts while this app's prompt screen is already active
-            if (activeLockPromptPkg == packageName &&
-                (nowMs - activeLockPromptAtMs) in 0L..LOCK_PROMPT_STALE_MS
-            ) {
-                return false
+            // Do not stack or re-trigger lock prompts while this app's prompt screen is genuinely active.
+            // Self-heal stale state if the lock overlay is no longer visible after initial launch window.
+            val promptElapsed = nowMs - activeLockPromptAtMs
+            if (activeLockPromptPkg == packageName && promptElapsed in 0L..LOCK_PROMPT_STALE_MS) {
+                if (isLockOverlayVisible || promptElapsed < PROMPT_LAUNCH_GRACE_MS) {
+                    return false
+                }
+                activeLockPromptPkg = null
+                activeLockPromptAtMs = 0L
             }
 
             if (activeForegroundUnlockedPkg == packageName) {
+                if (getEffectiveRelockTimeoutSeconds(packageName) == 0) {
+                    instantIdleDeadlines[packageName] = Long.MAX_VALUE
+                }
                 return false
             }
 
-            // If user switched directly from another protected app that used Instant (0s), finalize leaving it
+            // If user switched directly from another protected app, move that previous Instant app to its 1m idle timer
             val prevActive = activeForegroundUnlockedPkg
             if (prevActive != null && prevActive != packageName) {
-                val prevTimeout = getEffectiveRelockTimeoutSeconds(prevActive)
-                if (prevTimeout == 0) {
-                    unlockedUntilMs.remove(prevActive)
-                    if (lastUnlockedPkg == prevActive && (nowMs - lastUnlockedAtMs) >= POST_UNLOCK_SETTLE_MS) {
-                        lastUnlockedPkg = null
-                    }
+                moveInstantPkgToBackgroundLocked(prevActive, nowMs)
+                if (lastUnlockedPkg == prevActive && (nowMs - lastUnlockedAtMs) >= POST_UNLOCK_SETTLE_MS) {
+                    lastUnlockedPkg = null
                 }
                 activeForegroundUnlockedPkg = null
             }
 
             val effectiveTimeoutSec = getEffectiveRelockTimeoutSeconds(packageName)
 
-            // Guard against instant-relock re-triggering during AppLockActivity/BiometricPrompt close transition
-            if (effectiveTimeoutSec == 0 &&
-                lastUnlockedPkg == packageName &&
-                (nowMs - lastUnlockedAtMs) in 0L..POST_UNLOCK_SETTLE_MS
-            ) {
-                activeForegroundUnlockedPkg = packageName
-                return false
+            if (effectiveTimeoutSec == 0) {
+                // Guard against instant-relock re-triggering during AppLockActivity/BiometricPrompt close transition
+                if (lastUnlockedPkg == packageName &&
+                    (nowMs - lastUnlockedAtMs) in 0L..POST_UNLOCK_SETTLE_MS
+                ) {
+                    instantIdleDeadlines[packageName] = Long.MAX_VALUE
+                    activeForegroundUnlockedPkg = packageName
+                    return false
+                }
+
+                // Instant (0s) stays unlocked across switches until closed from Recents OR 60s of non-use
+                val deadline = instantIdleDeadlines[packageName]
+                if (deadline != null) {
+                    if (deadline == Long.MAX_VALUE || nowMs < deadline) {
+                        instantIdleDeadlines[packageName] = Long.MAX_VALUE
+                        activeForegroundUnlockedPkg = packageName
+                        return false
+                    }
+                    instantIdleDeadlines.remove(packageName)
+                }
+                return true
             }
 
             val expiry = unlockedUntilMs[packageName] ?: 0L
-            if (effectiveTimeoutSec > 0 && nowMs < expiry) {
+            if (nowMs < expiry) {
                 activeForegroundUnlockedPkg = packageName
                 return false
             }
             return true
+        }
+    }
+
+    fun onProtectedAppSentToBackground(nowMs: Long = System.currentTimeMillis()) {
+        synchronized(lock) {
+            val activePkg = activeForegroundUnlockedPkg ?: return
+            moveInstantPkgToBackgroundLocked(activePkg, nowMs)
+            activeForegroundUnlockedPkg = null
+        }
+    }
+
+    fun onAppClosedFromRecents(packageName: String, nowMs: Long = System.currentTimeMillis()) {
+        synchronized(lock) {
+            instantIdleDeadlines.remove(packageName)
+            if (activeForegroundUnlockedPkg == packageName) {
+                activeForegroundUnlockedPkg = null
+            }
+            if (lastUnlockedPkg == packageName) {
+                lastUnlockedPkg = null
+                lastUnlockedAtMs = 0L
+            }
+            if (activeLockPromptPkg == packageName) {
+                activeLockPromptPkg = null
+                activeLockPromptAtMs = 0L
+            }
+        }
+    }
+
+    fun onAllAppsClosedFromRecents(nowMs: Long = System.currentTimeMillis()) {
+        synchronized(lock) {
+            instantIdleDeadlines.clear()
+            val activePkg = activeForegroundUnlockedPkg
+            if (activePkg != null && getEffectiveRelockTimeoutSeconds(activePkg) == 0) {
+                activeForegroundUnlockedPkg = null
+            }
+            val lastPkg = lastUnlockedPkg
+            if (lastPkg != null && getEffectiveRelockTimeoutSeconds(lastPkg) == 0) {
+                lastUnlockedPkg = null
+                lastUnlockedAtMs = 0L
+            }
         }
     }
 
@@ -238,9 +319,8 @@ class AppAuthenticatorRepository private constructor(
             }
 
             if (activePkg != null) {
-                if (activeTimeout == 0) {
-                    unlockedUntilMs.remove(activePkg)
-                }
+                // In Instant (0s) mode, leaving without closing from Recents starts the 1-minute inactivity countdown
+                moveInstantPkgToBackgroundLocked(activePkg, nowMs)
                 activeForegroundUnlockedPkg = null
             }
             val lastPkg = lastUnlockedPkg
@@ -252,6 +332,7 @@ class AppAuthenticatorRepository private constructor(
                 lastUnlockedPkg = null
             }
             activeLockPromptPkg = null
+            activeLockPromptAtMs = 0L
         }
     }
 
@@ -268,8 +349,10 @@ class AppAuthenticatorRepository private constructor(
             val effectiveTimeoutSec = getEffectiveRelockTimeoutSeconds(packageName)
             if (effectiveTimeoutSec > 0) {
                 unlockedUntilMs[packageName] = nowMs + effectiveTimeoutSec * 1000L
+                instantIdleDeadlines.remove(packageName)
             } else {
                 unlockedUntilMs.remove(packageName)
+                instantIdleDeadlines[packageName] = Long.MAX_VALUE
             }
             totalUnlockCount++
             prefs.edit().putLong(KEY_TOTAL_UNLOCKS, totalUnlockCount).apply()
@@ -291,11 +374,20 @@ class AppAuthenticatorRepository private constructor(
     fun clearUnlockSessions() {
         synchronized(lock) {
             unlockedUntilMs.clear()
+            instantIdleDeadlines.clear()
             activeForegroundUnlockedPkg = null
             activeLockPromptPkg = null
             activeLockPromptAtMs = 0L
             lastUnlockedPkg = null
             lastUnlockedAtMs = 0L
+        }
+    }
+
+    private fun moveInstantPkgToBackgroundLocked(pkg: String, nowMs: Long) {
+        if (getEffectiveRelockTimeoutSeconds(pkg) != 0) return
+        val currentDeadline = instantIdleDeadlines[pkg]
+        if (currentDeadline == Long.MAX_VALUE) {
+            instantIdleDeadlines[pkg] = nowMs + INSTANT_INACTIVITY_TIMEOUT_MS
         }
     }
 
@@ -394,7 +486,9 @@ class AppAuthenticatorRepository private constructor(
         private const val KEY_TOTAL_UNLOCKS = "key_total_unlocks"
         private const val KEY_TOTAL_INTERCEPTIONS = "key_total_interceptions"
         internal const val POST_UNLOCK_SETTLE_MS = 1_500L
+        internal const val PROMPT_LAUNCH_GRACE_MS = 1_200L
         internal const val LOCK_PROMPT_STALE_MS = 20_000L
+        internal const val INSTANT_INACTIVITY_TIMEOUT_MS = 60_000L
 
         @Volatile
         private var instance: AppAuthenticatorRepository? = null

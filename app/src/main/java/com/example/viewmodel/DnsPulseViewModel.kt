@@ -179,47 +179,47 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     private fun loadPreferences() {
         viewModelScope.launch {
             prefs.engineModeFlow.collect { mode ->
-                _uiState.value = _uiState.value.copy(engineMode = mode)
+                _uiState.update { it.copy(engineMode = mode) }
             }
         }
         viewModelScope.launch {
             prefs.selectedDotPresetFlow.collect { dot ->
-                _uiState.value = _uiState.value.copy(selectedDotPreset = dot)
+                _uiState.update { it.copy(selectedDotPreset = dot) }
             }
         }
         viewModelScope.launch {
             prefs.lastVpnServerIdFlow.collect { id ->
-                _uiState.value = _uiState.value.copy(selectedVpnServerId = id)
+                _uiState.update { it.copy(selectedVpnServerId = id) }
             }
         }
         viewModelScope.launch {
             prefs.autoStartBootFlow.collect { enabled ->
-                _uiState.value = _uiState.value.copy(autoStartBoot = enabled)
+                _uiState.update { it.copy(autoStartBoot = enabled) }
             }
         }
         viewModelScope.launch {
             prefs.glowIntensityFlow.collect { enabled ->
-                _uiState.value = _uiState.value.copy(ambientGlow = enabled)
+                _uiState.update { it.copy(ambientGlow = enabled) }
             }
         }
         viewModelScope.launch {
             prefs.themeStyleFlow.collect { style ->
-                _uiState.value = _uiState.value.copy(themeStyle = style)
+                _uiState.update { it.copy(themeStyle = style) }
             }
         }
         viewModelScope.launch {
             prefs.appearanceModeFlow.collect { mode ->
-                _uiState.value = _uiState.value.copy(appearanceMode = mode)
+                _uiState.update { it.copy(appearanceMode = mode) }
             }
         }
         viewModelScope.launch {
             prefs.simpleModeFlow.collect { enabled ->
-                _uiState.value = _uiState.value.copy(simpleMode = enabled)
+                _uiState.update { it.copy(simpleMode = enabled) }
             }
         }
         viewModelScope.launch {
             prefs.fullScreenModeFlow.collect { enabled ->
-                _uiState.value = _uiState.value.copy(fullScreenMode = enabled)
+                _uiState.update { it.copy(fullScreenMode = enabled) }
             }
         }
     }
@@ -227,7 +227,7 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     private fun observeShizukuStatus() {
         viewModelScope.launch {
             shizukuBridge.shizukuStatus.collect { status ->
-                _uiState.value = _uiState.value.copy(shizukuStatus = status)
+                _uiState.update { it.copy(shizukuStatus = status) }
                 refreshSystemPrivateDnsState()
             }
         }
@@ -236,13 +236,13 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     private fun observeVpnService() {
         viewModelScope.launch {
             DnsVpnService.isRunning.collect { running ->
-                _uiState.value = _uiState.value.copy(isVpnActive = running)
+                _uiState.update { it.copy(isVpnActive = running) }
                 refreshSystemPrivateDnsState()
             }
         }
         viewModelScope.launch {
             DnsVpnService.activeServerName.collect { name ->
-                _uiState.value = _uiState.value.copy(activeVpnServerName = name)
+                _uiState.update { it.copy(activeVpnServerName = name) }
             }
         }
     }
@@ -250,7 +250,7 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     fun refreshSystemPrivateDnsState() {
         val state = PrivateDnsController.getPrivateDnsState(getApplication())
         shizukuBridge.checkStatus()
-        _uiState.value = _uiState.value.copy(privateDnsState = state)
+        _uiState.update { it.copy(privateDnsState = state) }
     }
 
     fun requestShizukuAuthorization() {
@@ -488,14 +488,16 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
 
     fun pingAllServers() {
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = _uiState.value.copy(isPinging = true)
+            _uiState.update { it.copy(isPinging = true) }
             val result = benchmarkDnsServers(_uiState.value.vpnServers)
 
-            _uiState.value = _uiState.value.copy(
-                vpnServers = result.updatedServers,
-                isPinging = false,
-                livePingMs = result.fastestLatencyMs ?: _uiState.value.livePingMs
-            )
+            _uiState.update { state ->
+                state.copy(
+                    vpnServers = result.updatedServers,
+                    isPinging = false,
+                    livePingMs = result.fastestLatencyMs ?: state.livePingMs
+                )
+            }
         }
     }
 

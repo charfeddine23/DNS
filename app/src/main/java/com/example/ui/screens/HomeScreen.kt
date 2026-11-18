@@ -252,7 +252,15 @@ fun HomeScreen(
                                     }
                                     if (!prepareFailed) {
                                         if (prepareIntent != null) {
-                                            vpnLauncher.launch(prepareIntent)
+                                            try {
+                                                vpnLauncher.launch(prepareIntent)
+                                            } catch (e: Exception) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "VPN permission dialog unavailable: ${e.localizedMessage}",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                         } else {
                                             viewModel.startVpn(context)
                                         }
@@ -358,7 +366,15 @@ fun HomeScreen(
                                 server = settledServer,
                                 context = context,
                                 onVpnPermissionRequired = { prepareIntent ->
-                                    vpnLauncher.launch(prepareIntent)
+                                    try {
+                                        vpnLauncher.launch(prepareIntent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(
+                                            context,
+                                            "VPN permission dialog unavailable: ${e.localizedMessage}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 },
                                 onPrivateDnsFallback = onFallbackRequired
                             )

@@ -76,7 +76,7 @@
     <string name="auth_relock_1m">1د</string>
     <string name="auth_relock_5m">5د</string>
     <string name="auth_relock_15m">15د</string>
-    <string name="auth_relock_instant_hint">يُقفل تلقائياً عند الخروج من التطبيق فقط</string>
+    <string name="auth_relock_instant_hint">يبقى مفتوحاً حتى يتم إغلاقه من قائمة المهام، أو يُقفل تلقائياً بعد دقيقة من عدم الاستعمال</string>
     <string name="auth_long_press_hint">اضغط مطولاً (ثانية) على أي تطبيق لتخصيص وقت القفل الخاص به</string>
     <string name="auth_app_sheet_title">مهلة إعادة القفل • %1$s</string>
     <string name="auth_app_sheet_custom_label">مهلة مخصصة (بالثواني)</string>

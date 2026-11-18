@@ -117,6 +117,7 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"
+            android:taskAffinity="com.pulse.dnspulse.applock"
             android:theme="@style/Theme.MyApplication" />
 
         <!-- Instant foreground detection for apps protected by Fingerprint Authenticator -->

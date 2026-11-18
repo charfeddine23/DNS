@@ -90,11 +90,19 @@ class AppLockActivity : FragmentActivity() {
 
     private var targetPackageState by mutableStateOf("")
     private var targetAppNameState by mutableStateOf("")
+    private var promptRequestId by mutableStateOf(0)
+    private var isWindowFocused by mutableStateOf(false)
+
+    @Volatile
+    private var isAuthenticatingWithBiometric = false
+    @Volatile
+    private var isExplicitlyFinishing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         readExtras(intent)
+        promptRequestId++
 
         setContent {
             val themeStyle by prefs.themeStyleFlow.collectAsState(initial = AppThemeStyle.CHROMATIC_FROSTED_LIQUID)
@@ -104,15 +112,19 @@ class AppLockActivity : FragmentActivity() {
 
             val currentPkg = targetPackageState
             val currentAppName = targetAppNameState
+            val currentRequestId = promptRequestId
+            val focused = isWindowFocused
             val appIconBitmap: Bitmap? = remember(currentPkg) {
                 runCatching {
                     packageManager.getApplicationIcon(currentPkg).toBitmap(width = 160, height = 160)
                 }.getOrNull()
             }
-            var errorText by remember(currentPkg) { mutableStateOf<String?>(null) }
+            var errorText by remember(currentPkg, currentRequestId) { mutableStateOf<String?>(null) }
+            var lastAutoTriggeredRequestId by remember { mutableStateOf(-1) }
 
             val triggerPrompt: () -> Unit = {
                 errorText = null
+                isAuthenticatingWithBiometric = true
                 BiometricHelper.showFingerprintPrompt(
                     activity = this@AppLockActivity,
                     title = getString(R.string.auth_prompt_title),
@@ -120,17 +132,26 @@ class AppLockActivity : FragmentActivity() {
                     negativeButtonText = getString(R.string.auth_prompt_negative),
                     allowDeviceCredential = config.allowDeviceCredentialFallback,
                     onSuccess = {
+                        isAuthenticatingWithBiometric = false
+                        isExplicitlyFinishing = true
                         authRepo.markAppUnlocked(currentPkg)
                         finishWithoutFlicker()
                     },
                     onErrorOrCancelled = { msg ->
+                        isAuthenticatingWithBiometric = false
                         errorText = msg
+                    },
+                    onCancelled = {
+                        isAuthenticatingWithBiometric = false
                     }
                 )
             }
 
-            LaunchedEffect(currentPkg) {
-                if (currentPkg.isNotBlank()) {
+            // Wait until the lock activity window actually holds input focus before launching BiometricPrompt.
+            // This prevents silent BiometricPrompt drops on OneUI/HyperOS/Android 13+ cold transitions.
+            LaunchedEffect(currentPkg, currentRequestId, focused) {
+                if (currentPkg.isNotBlank() && focused && lastAutoTriggeredRequestId != currentRequestId) {
+                    lastAutoTriggeredRequestId = currentRequestId
                     authRepo.setLockPromptActive(currentPkg)
                     triggerPrompt()
                 }
@@ -157,15 +178,36 @@ class AppLockActivity : FragmentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        isWindowFocused = hasFocus
+    }
+
     override fun onStart() {
         super.onStart()
+        isActivityForeground = true
+        isExplicitlyFinishing = false
         if (targetPackageState.isNotBlank()) {
             authRepo.setLockPromptActive(targetPackageState)
         }
     }
 
+    override fun onStop() {
+        isActivityForeground = false
+        if (!isChangingConfigurations &&
+            !isAuthenticatingWithBiometric &&
+            !isExplicitlyFinishing &&
+            targetPackageState.isNotBlank()
+        ) {
+            authRepo.clearLockPromptActive(targetPackageState)
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
-        if (targetPackageState.isNotBlank()) {
+        isActivityForeground = false
+        isAuthenticatingWithBiometric = false
+        if (!isChangingConfigurations && targetPackageState.isNotBlank()) {
             authRepo.clearLockPromptActive(targetPackageState)
         }
         super.onDestroy()
@@ -174,7 +216,9 @@ class AppLockActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        isExplicitlyFinishing = false
         readExtras(intent)
+        promptRequestId++
         if (targetPackageState.isNotBlank()) {
             authRepo.setLockPromptActive(targetPackageState)
         }
@@ -187,12 +231,15 @@ class AppLockActivity : FragmentActivity() {
     }
 
     private fun finishWithoutFlicker() {
+        isExplicitlyFinishing = true
         finish()
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
     }
 
     private fun exitToHomeLauncher() {
+        isExplicitlyFinishing = true
+        isAuthenticatingWithBiometric = false
         authRepo.clearLockPromptActive(targetPackageState.takeIf { it.isNotBlank() })
         val homeIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
@@ -205,6 +252,10 @@ class AppLockActivity : FragmentActivity() {
     companion object {
         const val EXTRA_TARGET_PACKAGE = "extra_target_package"
         const val EXTRA_TARGET_APP_NAME = "extra_target_app_name"
+
+        @Volatile
+        var isActivityForeground: Boolean = false
+            private set
     }
 }
 

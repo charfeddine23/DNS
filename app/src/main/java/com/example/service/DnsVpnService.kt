@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -25,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
@@ -32,28 +34,89 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.Inet6Address
 import java.net.InetAddress
+import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class DnsVpnService : VpnService() {
 
+    private class TunnelSession(
+        val generation: Long,
+        val pfd: ParcelFileDescriptor,
+        val wakeReadPfd: ParcelFileDescriptor?,
+        val wakeWritePfd: ParcelFileDescriptor?
+    ) {
+        val writeLock = Any()
+        val closed = AtomicBoolean(false)
+
+        fun wake() {
+            val writePfd = wakeWritePfd ?: return
+            if (closed.get()) return
+            try {
+                Os.write(writePfd.fileDescriptor, ByteBuffer.wrap(byteArrayOf(1)))
+            } catch (_: Throwable) {
+                try {
+                    FileOutputStream(writePfd.fileDescriptor).write(1)
+                } catch (_: Throwable) {}
+            }
+        }
+
+        fun writePacket(packet: ByteArray) {
+            if (closed.get()) return
+            synchronized(writeLock) {
+                if (closed.get()) return
+                try {
+                    if (pfd.fileDescriptor.valid()) {
+                        FileOutputStream(pfd.fileDescriptor).write(packet)
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+
+        fun closeOnce() {
+            if (!closed.compareAndSet(false, true)) return
+            synchronized(writeLock) {
+                try {
+                    wakeWritePfd?.close()
+                } catch (_: Throwable) {}
+                try {
+                    wakeReadPfd?.close()
+                } catch (_: Throwable) {}
+                try {
+                    pfd.close()
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Ignored error closing vpnInterface", e)
+                }
+            }
+        }
+    }
+
     @Volatile
-    private var vpnInterface: ParcelFileDescriptor? = null
-    @Volatile
-    private var wakeupPipeRead: ParcelFileDescriptor? = null
-    @Volatile
-    private var wakeupPipeWrite: ParcelFileDescriptor? = null
+    private var activeSession: TunnelSession? = null
     @Volatile
     private var currentServerKey: String? = null
+    @Volatile
+    private var isInForeground: Boolean = false
+    private val tunnelGeneration = AtomicLong(0L)
+    private val tunnelMutex = Mutex()
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val dnsForwardDispatcher = Dispatchers.IO.limitedParallelism(16)
+    private val dnsForwardDispatcher = Dispatchers.IO.limitedParallelism(24)
+    private val forwardConcurrencyGate = Semaphore(permits = 48)
+    @Volatile
     private var tunnelJob: Job? = null
-    private val outWriteLock = Any()
     private val analyticsRepo: DnsAnalyticsRepository by lazy {
         DnsAnalyticsRepository.getInstance(applicationContext)
     }
@@ -78,10 +141,15 @@ class DnsVpnService : VpnService() {
         const val EXTRA_SECONDARY_IPV6 = "extra_secondary_ipv6"
         const val EXTRA_SERVER_NAME = "extra_server_name"
 
+        private const val TUN_CLIENT_IPV4 = "10.233.1.2"
+        private const val TUN_VIRTUAL_DNS_IPV4 = "10.233.1.1"
+        private const val DEFAULT_UPSTREAM_IPV4 = "94.140.14.14"
+
         private const val NOTIFICATION_CHANNEL_ID = "dns_pulse_vpn_channel"
         private const val NOTIFICATION_ID = 1001
         private const val KEEP_ALIVE_REQUEST_CODE = 1002
         private const val KEEP_ALIVE_DELAY_MS = 800L
+        private const val DNS_SOCKET_TIMEOUT_MS = 1800
 
         private const val VPN_PREFS_NAME = "dns_pulse_vpn_state"
         private const val KEY_SHOULD_STAY_ACTIVE = "should_stay_active"
@@ -114,7 +182,7 @@ class DnsVpnService : VpnService() {
                 .putString(KEY_SECONDARY_IPV4, config.secondaryIpv4)
                 .putString(KEY_PRIMARY_IPV6, config.primaryIpv6)
                 .putString(KEY_SECONDARY_IPV6, config.secondaryIpv6)
-                .commit()
+                .apply()
         }
 
         internal fun setShouldStayActive(context: Context, active: Boolean) {
@@ -122,7 +190,7 @@ class DnsVpnService : VpnService() {
                 .getSharedPreferences(VPN_PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_SHOULD_STAY_ACTIVE, active)
-                .commit()
+                .apply()
         }
 
         fun isShouldStayActive(context: Context): Boolean {
@@ -135,7 +203,7 @@ class DnsVpnService : VpnService() {
             val prefs = context.applicationContext.getSharedPreferences(VPN_PREFS_NAME, Context.MODE_PRIVATE)
             return PersistedVpnConfig(
                 serverName = prefs.getString(KEY_SERVER_NAME, null)?.takeIf { it.isNotBlank() } ?: "AdGuard DNS",
-                primaryIpv4 = prefs.getString(KEY_PRIMARY_IPV4, null)?.takeIf { it.isNotBlank() } ?: "94.140.14.14",
+                primaryIpv4 = prefs.getString(KEY_PRIMARY_IPV4, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_UPSTREAM_IPV4,
                 secondaryIpv4 = prefs.getString(KEY_SECONDARY_IPV4, null).orEmpty(),
                 primaryIpv6 = prefs.getString(KEY_PRIMARY_IPV6, null).orEmpty(),
                 secondaryIpv6 = prefs.getString(KEY_SECONDARY_IPV6, null).orEmpty()
@@ -176,7 +244,7 @@ class DnsVpnService : VpnService() {
                     alarmManager.cancel(pi)
                     pi.cancel()
                 }
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
 
         fun startVpn(
@@ -188,11 +256,11 @@ class DnsVpnService : VpnService() {
             secondaryIpv6: String = ""
         ) {
             val config = PersistedVpnConfig(
-                serverName = serverName,
-                primaryIpv4 = primaryIpv4,
-                secondaryIpv4 = secondaryIpv4,
-                primaryIpv6 = primaryIpv6,
-                secondaryIpv6 = secondaryIpv6
+                serverName = serverName.ifBlank { "DNS Pulse" },
+                primaryIpv4 = primaryIpv4.trim().ifBlank { DEFAULT_UPSTREAM_IPV4 },
+                secondaryIpv4 = secondaryIpv4.trim(),
+                primaryIpv6 = primaryIpv6.trim(),
+                secondaryIpv6 = secondaryIpv6.trim()
             )
             persistActiveConfig(context = context, active = true, config = config)
             launchForegroundService(context, buildStartIntent(context, config))
@@ -205,7 +273,7 @@ class DnsVpnService : VpnService() {
                 } else {
                     context.startService(intent)
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Unable to start DnsVpnService", e)
                 setShouldStayActive(context, false)
                 _isRunning.value = false
@@ -229,10 +297,10 @@ class DnsVpnService : VpnService() {
                         action = ACTION_STOP
                     }
                     context.startService(stopIntent)
-                } catch (_: Exception) {
+                } catch (_: Throwable) {
                     try {
                         context.stopService(Intent(context, DnsVpnService::class.java))
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
                         Log.w(TAG, "stopService fallback", e)
                     }
                 }
@@ -252,25 +320,27 @@ class DnsVpnService : VpnService() {
 
         return when (intent?.action) {
             ACTION_STOP -> {
+                ensureForegroundBeforeStopOnOreo()
                 requestShutdown()
                 START_NOT_STICKY
             }
             ACTION_START -> {
                 val config = PersistedVpnConfig(
-                    serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "DNS Pulse",
-                    primaryIpv4 = intent.getStringExtra(EXTRA_PRIMARY_IPV4)?.takeIf { it.isNotBlank() } ?: "94.140.14.14",
-                    secondaryIpv4 = intent.getStringExtra(EXTRA_SECONDARY_IPV4).orEmpty(),
-                    primaryIpv6 = intent.getStringExtra(EXTRA_PRIMARY_IPV6).orEmpty(),
-                    secondaryIpv6 = intent.getStringExtra(EXTRA_SECONDARY_IPV6).orEmpty()
+                    serverName = intent.getStringExtra(EXTRA_SERVER_NAME)?.takeIf { it.isNotBlank() } ?: "DNS Pulse",
+                    primaryIpv4 = intent.getStringExtra(EXTRA_PRIMARY_IPV4)?.trim()?.takeIf { it.isNotBlank() } ?: DEFAULT_UPSTREAM_IPV4,
+                    secondaryIpv4 = intent.getStringExtra(EXTRA_SECONDARY_IPV4).orEmpty().trim(),
+                    primaryIpv6 = intent.getStringExtra(EXTRA_PRIMARY_IPV6).orEmpty().trim(),
+                    secondaryIpv6 = intent.getStringExtra(EXTRA_SECONDARY_IPV6).orEmpty().trim()
                 )
                 startOrMaintainTunnel(config)
             }
             else -> {
                 // START_STICKY restarts deliver a null intent (or START_FLAG_RETRY without action).
                 // Restore persisted VPN tunnel config automatically if it was active before process kill.
-                if (isShouldStayActive(this) || isStickyRetry && isShouldStayActive(this)) {
+                if (isShouldStayActive(this) || (isStickyRetry && isShouldStayActive(this))) {
                     startOrMaintainTunnel(restoreLastKnownConfig(this))
                 } else {
+                    ensureForegroundBeforeStopOnOreo()
                     stopForegroundCompat()
                     stopSelf()
                     START_NOT_STICKY
@@ -279,12 +349,20 @@ class DnsVpnService : VpnService() {
         }
     }
 
+    private fun ensureForegroundBeforeStopOnOreo() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInForeground) {
+            try {
+                startForegroundCompat(buildNotification("DNS Pulse"))
+            } catch (_: Throwable) {}
+        }
+    }
+
     private fun startOrMaintainTunnel(config: PersistedVpnConfig): Int {
         persistActiveConfig(context = this, active = true, config = config)
 
         try {
             startForegroundCompat(buildNotification(config.serverName))
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to enter foreground mode", e)
             setShouldStayActive(this, false)
             _isRunning.value = false
@@ -294,22 +372,36 @@ class DnsVpnService : VpnService() {
         }
 
         // Maintain existing tunnel without packet interruption if already running on same server
-        if (vpnInterface != null && _isRunning.value && currentServerKey == config.key()) {
+        val existingSession = activeSession
+        if (existingSession != null && !existingSession.closed.get() && _isRunning.value && currentServerKey == config.key()) {
             return START_STICKY
         }
 
         currentServerKey = config.key()
-
+        val generation = tunnelGeneration.incrementAndGet()
         val previousJob = tunnelJob
+        activeSession?.wake()
         previousJob?.cancel()
-        signalWakeupPipe()
-        closeVpnInterfaceOnly()
 
         tunnelJob = serviceScope.launch {
-            withTimeoutOrNull(400) {
-                previousJob?.join()
+            tunnelMutex.withLock {
+                if (tunnelGeneration.get() != generation || !currentCoroutineContext().isActive) {
+                    return@withLock
+                }
+                if (previousJob != null) {
+                    withTimeoutOrNull(800L) {
+                        previousJob.join()
+                    }
+                }
+                // Guarantee previous session resources are closed before opening a new TUN interface
+                activeSession?.let { oldSession ->
+                    oldSession.closeOnce()
+                    if (activeSession === oldSession) {
+                        activeSession = null
+                    }
+                }
+                connectVpnAsync(config, generation)
             }
-            connectVpnAsync(config)
         }
         return START_STICKY
     }
@@ -322,7 +414,8 @@ class DnsVpnService : VpnService() {
         val restartIntent = buildStartIntent(applicationContext, config)
 
         // If tunnel interface was dropped during task removal, explicitly re-launch immediately
-        if (vpnInterface == null || !_isRunning.value) {
+        val currentSession = activeSession
+        if (currentSession == null || currentSession.closed.get() || !_isRunning.value) {
             launchForegroundService(applicationContext, restartIntent)
         }
 
@@ -350,7 +443,7 @@ class DnsVpnService : VpnService() {
             } else {
                 alarmManager?.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "onTaskRemoved keep-alive schedule skipped", e)
         }
     }
@@ -359,12 +452,13 @@ class DnsVpnService : VpnService() {
         setShouldStayActive(this, false)
         cancelKeepAliveAlarm(this)
         currentServerKey = null
+        tunnelGeneration.incrementAndGet()
         disconnectVpn()
         stopForegroundCompat()
         stopSelf()
         try {
             applicationContext.stopService(Intent(applicationContext, DnsVpnService::class.java))
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -377,9 +471,11 @@ class DnsVpnService : VpnService() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        isInForeground = true
     }
 
     private fun stopForegroundCompat() {
+        isInForeground = false
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -387,51 +483,46 @@ class DnsVpnService : VpnService() {
                 @Suppress("DEPRECATION")
                 stopForeground(true)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "stopForegroundCompat ignored", e)
         }
     }
 
-    private suspend fun connectVpnAsync(config: PersistedVpnConfig) {
-        closeVpnInterfaceOnly()
-        closeWakeupPipe()
-        var established: ParcelFileDescriptor? = null
+    private suspend fun connectVpnAsync(config: PersistedVpnConfig, generation: Long) {
+        if (tunnelGeneration.get() != generation || !currentCoroutineContext().isActive) return
 
+        val upstreamIpv4Targets = resolveLiteralIpv4List(
+            config.primaryIpv4,
+            config.secondaryIpv4,
+            DEFAULT_UPSTREAM_IPV4
+        )
+        val upstreamIpv6Targets = resolveLiteralIpv6List(
+            config.primaryIpv6,
+            config.secondaryIpv6
+        )
+
+        var session: TunnelSession? = null
         try {
             val builder = Builder().apply {
                 setSession("DNS Pulse (${config.serverName})")
                 setMtu(1500)
-                addAddress("10.233.1.2", 30)
-                addDnsServer(config.primaryIpv4)
-                addRoute(config.primaryIpv4, 32)
-
-                if (config.secondaryIpv4.isNotBlank()) {
-                    addDnsServer(config.secondaryIpv4)
-                    addRoute(config.secondaryIpv4, 32)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    setMetered(false)
                 }
-
-                if (config.primaryIpv6.isNotBlank()) {
-                    try {
-                        addAddress("fd00:1:fd00:1::2", 126)
-                        addDnsServer(config.primaryIpv6)
-                        addRoute(config.primaryIpv6, 128)
-                        if (config.secondaryIpv6.isNotBlank()) {
-                            addDnsServer(config.secondaryIpv6)
-                            addRoute(config.secondaryIpv6, 128)
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "IPv6 routing optional skip", e)
-                    }
-                }
+                addAddress(TUN_CLIENT_IPV4, 30)
+                // Virtual local TUN DNS endpoint avoids routing collisions with HTTPS/DoT to real DNS IPs
+                // and prevents IPv6-only DNS blackhole stalls on IPv4-only Wi-Fi/mobile networks.
+                addDnsServer(TUN_VIRTUAL_DNS_IPV4)
+                addRoute(TUN_VIRTUAL_DNS_IPV4, 32)
 
                 try {
                     addDisallowedApplication(packageName)
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.w(TAG, "Cannot disallow self package", e)
                 }
             }
 
-            established = builder.establish()
+            val established = builder.establish()
             if (established == null) {
                 Log.e(TAG, "Failed to establish VPN interface (null)")
                 setShouldStayActive(this, false)
@@ -446,48 +537,57 @@ class DnsVpnService : VpnService() {
 
             val pipe = try {
                 ParcelFileDescriptor.createPipe()
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 null
             }
-            wakeupPipeRead = pipe?.get(0)
-            wakeupPipeWrite = pipe?.get(1)
 
-            vpnInterface = established
+            session = TunnelSession(
+                generation = generation,
+                pfd = established,
+                wakeReadPfd = pipe?.get(0),
+                wakeWritePfd = pipe?.get(1)
+            )
+
+            if (tunnelGeneration.get() != generation || !currentCoroutineContext().isActive) {
+                session.closeOnce()
+                return
+            }
+
+            activeSession = session
             _isRunning.value = true
             _activeServerName.value = config.serverName
 
-            runDnsTunnelLoop(established, wakeupPipeRead, config.primaryIpv4)
+            runDnsTunnelLoop(session, upstreamIpv4Targets, upstreamIpv6Targets)
         } catch (e: CancellationException) {
-            if (vpnInterface === established) {
-                closeVpnInterfaceOnly()
-                closeWakeupPipe()
-            } else {
-                try {
-                    established?.close()
-                } catch (_: Exception) {}
-            }
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error establishing/running VPN", e)
-            if (vpnInterface === established || vpnInterface == null) {
-                disconnectVpn()
+            if (tunnelGeneration.get() == generation) {
+                _isRunning.value = false
+                _activeServerName.value = "Disconnected"
                 stopForegroundCompat()
                 stopSelf()
-            } else {
-                try {
-                    established?.close()
-                } catch (_: Exception) {}
+            }
+        } finally {
+            withContext(NonCancellable) {
+                session?.let { s ->
+                    if (activeSession === s) {
+                        activeSession = null
+                    }
+                    s.closeOnce()
+                }
             }
         }
     }
 
     private suspend fun runDnsTunnelLoop(
-        pfd: ParcelFileDescriptor,
-        wakeReadPfd: ParcelFileDescriptor?,
-        fallbackIpv4Dns: String
+        session: TunnelSession,
+        upstreamIpv4Targets: List<InetAddress>,
+        upstreamIpv6Targets: List<InetAddress>
     ) {
+        val pfd = session.pfd
+        val wakeReadPfd = session.wakeReadPfd
         val inStream = FileInputStream(pfd.fileDescriptor)
-        val outStream = FileOutputStream(pfd.fileDescriptor)
         val packet = ByteArray(32767)
 
         try {
@@ -502,7 +602,11 @@ class DnsVpnService : VpnService() {
                 }
                 val pollFds = arrayOf(tunPoll, wakePoll)
 
-                while (currentCoroutineContext().isActive && _isRunning.value && vpnInterface === pfd) {
+                while (
+                    currentCoroutineContext().isActive &&
+                    tunnelGeneration.get() == session.generation &&
+                    !session.closed.get()
+                ) {
                     tunPoll.revents = 0
                     wakePoll.revents = 0
                     val ready = try {
@@ -510,11 +614,17 @@ class DnsVpnService : VpnService() {
                     } catch (e: ErrnoException) {
                         if (e.errno == OsConstants.EINTR) continue
                         break
-                    } catch (_: Exception) {
+                    } catch (_: Throwable) {
                         break
                     }
 
-                    if (!currentCoroutineContext().isActive || !_isRunning.value || vpnInterface !== pfd) break
+                    if (
+                        !currentCoroutineContext().isActive ||
+                        tunnelGeneration.get() != session.generation ||
+                        session.closed.get()
+                    ) {
+                        break
+                    }
 
                     val wakeEvents = wakePoll.revents.toInt()
                     if ((wakeEvents and (OsConstants.POLLIN or OsConstants.POLLHUP or OsConstants.POLLERR)) != 0) {
@@ -529,27 +639,37 @@ class DnsVpnService : VpnService() {
                     if (ready > 0 && (tunEvents and OsConstants.POLLIN) != 0) {
                         val length = try {
                             inStream.read(packet)
-                        } catch (_: Exception) {
+                        } catch (e: ErrnoException) {
+                            if (e.errno == OsConstants.EINTR || e.errno == OsConstants.EAGAIN) continue
+                            break
+                        } catch (_: Throwable) {
                             break
                         }
                         if (length <= 0) continue
-                        dispatchDnsPacket(packet, length, outStream, fallbackIpv4Dns)
+                        dispatchDnsPacket(packet, length, session, upstreamIpv4Targets, upstreamIpv6Targets)
                     }
                 }
             } else {
-                while (currentCoroutineContext().isActive && _isRunning.value && vpnInterface === pfd) {
+                while (
+                    currentCoroutineContext().isActive &&
+                    tunnelGeneration.get() == session.generation &&
+                    !session.closed.get()
+                ) {
                     val length = try {
                         inStream.read(packet)
-                    } catch (_: Exception) {
+                    } catch (e: ErrnoException) {
+                        if (e.errno == OsConstants.EINTR || e.errno == OsConstants.EAGAIN) continue
+                        break
+                    } catch (_: Throwable) {
                         break
                     }
                     if (length <= 0) continue
-                    dispatchDnsPacket(packet, length, outStream, fallbackIpv4Dns)
+                    dispatchDnsPacket(packet, length, session, upstreamIpv4Targets, upstreamIpv6Targets)
                 }
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.d(TAG, "Tunnel loop ended", e)
         }
     }
@@ -557,21 +677,23 @@ class DnsVpnService : VpnService() {
     private fun dispatchDnsPacket(
         packet: ByteArray,
         length: Int,
-        outStream: FileOutputStream,
-        fallbackIpv4Dns: String
+        session: TunnelSession,
+        upstreamIpv4Targets: List<InetAddress>,
+        upstreamIpv6Targets: List<InetAddress>
     ) {
+        if (length < 28 || length > packet.size) return
         val version = (packet[0].toInt() and 0xF0) ushr 4
         when (version) {
-            4 -> handleIpv4Packet(packet, length, outStream, fallbackIpv4Dns)
-            6 -> handleIpv6Packet(packet, length, outStream, fallbackIpv4Dns)
+            4 -> handleIpv4Packet(packet, length, session, upstreamIpv4Targets)
+            6 -> handleIpv6Packet(packet, length, session, upstreamIpv6Targets, upstreamIpv4Targets)
         }
     }
 
     private fun handleIpv4Packet(
         packet: ByteArray,
         length: Int,
-        outStream: FileOutputStream,
-        fallbackIpv4Dns: String
+        session: TunnelSession,
+        upstreamIpv4Targets: List<InetAddress>
     ) {
         if (length < 28) return
         val ihl = (packet[0].toInt() and 0x0F) * 4
@@ -587,25 +709,33 @@ class DnsVpnService : VpnService() {
         val udpPayloadOffset = ihl + 8
         if (length - udpPayloadOffset <= 0) return
 
+        if (!forwardConcurrencyGate.tryAcquire()) {
+            return
+        }
+
         val dnsQuery = packet.copyOfRange(udpPayloadOffset, length)
         serviceScope.launch(dnsForwardDispatcher) {
-            val startedAtMs = SystemClock.elapsedRealtime()
-            val responseData = forwardDnsUdp(dnsQuery, dstIp, fallbackIpv4Dns) ?: return@launch
-            val rttMs = (SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0L)
-            DnsWireParser.analyzeTransaction(dnsQuery, responseData)?.let { analysis ->
-                analyticsRepo.recordQuery(analysis, rttMs)
-            }
-            val responsePacket = DnsPacketBuilder.buildIpv4UdpResponse(
-                clientIp = srcIp,
-                clientPort = srcPort,
-                serverIp = dstIp,
-                serverPort = 53,
-                dnsPayload = responseData
-            )
-            synchronized(outWriteLock) {
-                try {
-                    outStream.write(responsePacket)
-                } catch (_: Exception) {}
+            try {
+                if (session.closed.get() || tunnelGeneration.get() != session.generation) return@launch
+                val startedAtMs = SystemClock.elapsedRealtime()
+                val responseData = forwardDnsUdp(dnsQuery, upstreamIpv4Targets) ?: return@launch
+                val rttMs = (SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0L)
+                runCatching {
+                    DnsWireParser.analyzeTransaction(dnsQuery, responseData)?.let { analysis ->
+                        analyticsRepo.recordQuery(analysis, rttMs)
+                    }
+                }
+                if (session.closed.get() || tunnelGeneration.get() != session.generation) return@launch
+                val responsePacket = DnsPacketBuilder.buildIpv4UdpResponse(
+                    clientIp = srcIp,
+                    clientPort = srcPort,
+                    serverIp = dstIp,
+                    serverPort = 53,
+                    dnsPayload = responseData
+                )
+                session.writePacket(responsePacket)
+            } finally {
+                forwardConcurrencyGate.release()
             }
         }
     }
@@ -613,8 +743,9 @@ class DnsVpnService : VpnService() {
     private fun handleIpv6Packet(
         packet: ByteArray,
         length: Int,
-        outStream: FileOutputStream,
-        fallbackIpv4Dns: String
+        session: TunnelSession,
+        upstreamIpv6Targets: List<InetAddress>,
+        upstreamIpv4Targets: List<InetAddress>
     ) {
         if (length < 48) return
         if ((packet[6].toInt() and 0xFF) != 17) return // UDP only
@@ -627,96 +758,136 @@ class DnsVpnService : VpnService() {
         val srcPort = ((packet[40].toInt() and 0xFF) shl 8) or (packet[41].toInt() and 0xFF)
         if (length - 48 <= 0) return
 
+        if (!forwardConcurrencyGate.tryAcquire()) {
+            return
+        }
+
         val dnsQuery = packet.copyOfRange(48, length)
+        val targets = upstreamIpv6Targets + upstreamIpv4Targets
         serviceScope.launch(dnsForwardDispatcher) {
-            val startedAtMs = SystemClock.elapsedRealtime()
-            val responseData = forwardDnsUdp(dnsQuery, dstIp, fallbackIpv4Dns) ?: return@launch
-            val rttMs = (SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0L)
-            DnsWireParser.analyzeTransaction(dnsQuery, responseData)?.let { analysis ->
-                analyticsRepo.recordQuery(analysis, rttMs)
-            }
-            val responsePacket = DnsPacketBuilder.buildIpv6UdpResponse(
-                clientIp = srcIp,
-                clientPort = srcPort,
-                serverIp = dstIp,
-                serverPort = 53,
-                dnsPayload = responseData
-            )
-            synchronized(outWriteLock) {
-                try {
-                    outStream.write(responsePacket)
-                } catch (_: Exception) {}
+            try {
+                if (session.closed.get() || tunnelGeneration.get() != session.generation) return@launch
+                val startedAtMs = SystemClock.elapsedRealtime()
+                val responseData = forwardDnsUdp(dnsQuery, targets) ?: return@launch
+                val rttMs = (SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0L)
+                runCatching {
+                    DnsWireParser.analyzeTransaction(dnsQuery, responseData)?.let { analysis ->
+                        analyticsRepo.recordQuery(analysis, rttMs)
+                    }
+                }
+                if (session.closed.get() || tunnelGeneration.get() != session.generation) return@launch
+                val responsePacket = DnsPacketBuilder.buildIpv6UdpResponse(
+                    clientIp = srcIp,
+                    clientPort = srcPort,
+                    serverIp = dstIp,
+                    serverPort = 53,
+                    dnsPayload = responseData
+                )
+                session.writePacket(responsePacket)
+            } finally {
+                forwardConcurrencyGate.release()
             }
         }
     }
 
     private fun forwardDnsUdp(
         dnsQuery: ByteArray,
-        targetIpBytes: ByteArray,
-        fallbackIpv4Dns: String
+        targets: List<InetAddress>
     ): ByteArray? {
-        return try {
-            forwardToAddress(dnsQuery, InetAddress.getByAddress(targetIpBytes))
-        } catch (_: Exception) {
-            try {
-                forwardToAddress(dnsQuery, InetAddress.getByName(fallbackIpv4Dns))
-            } catch (_: Exception) {
+        for (address in targets) {
+            val response = try {
+                forwardToAddress(dnsQuery, address)
+            } catch (_: Throwable) {
                 null
             }
+            if (response != null) return response
         }
+        return null
     }
 
     private fun forwardToAddress(dnsQuery: ByteArray, address: InetAddress): ByteArray? {
         DatagramSocket().use { socket ->
             if (!protect(socket)) {
-                Log.w(TAG, "protect(socket) failed")
+                try {
+                    val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                    cm?.activeNetwork?.bindSocket(socket)
+                } catch (_: Throwable) {}
+                Log.w(TAG, "protect(socket) returned false")
             }
-            socket.soTimeout = 4000
+            socket.soTimeout = DNS_SOCKET_TIMEOUT_MS
             socket.send(DatagramPacket(dnsQuery, dnsQuery.size, address, 53))
 
-            val respBuffer = ByteArray(4096)
+            val respBuffer = ByteArray(2048)
             val inPacket = DatagramPacket(respBuffer, respBuffer.size)
             socket.receive(inPacket)
+            if (inPacket.length <= 0) return null
             return respBuffer.copyOfRange(0, inPacket.length)
         }
     }
 
-    private fun signalWakeupPipe() {
-        try {
-            wakeupPipeWrite?.let { writePfd ->
-                FileOutputStream(writePfd.fileDescriptor).write(1)
-            }
-        } catch (_: Exception) {}
-    }
-
-    private fun closeWakeupPipe() {
-        try {
-            wakeupPipeWrite?.close()
-        } catch (_: Exception) {}
-        wakeupPipeWrite = null
-        try {
-            wakeupPipeRead?.close()
-        } catch (_: Exception) {}
-        wakeupPipeRead = null
-    }
-
-    private fun closeVpnInterfaceOnly() {
-        try {
-            vpnInterface?.close()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error closing vpnInterface", e)
+    private fun resolveLiteralIpv4List(vararg candidates: String): List<InetAddress> {
+        val out = LinkedHashSet<InetAddress>()
+        for (raw in candidates) {
+            val trimmed = raw.trim()
+            if (trimmed.isBlank() || !isLiteralIpv4(trimmed)) continue
+            runCatching { InetAddress.getByName(trimmed) }
+                .getOrNull()
+                ?.takeIf { it is Inet4Address }
+                ?.let { out.add(it) }
         }
-        vpnInterface = null
+        if (out.isEmpty()) {
+            runCatching { InetAddress.getByName(DEFAULT_UPSTREAM_IPV4) }
+                .getOrNull()
+                ?.let { out.add(it) }
+        }
+        return out.toList()
+    }
+
+    private fun resolveLiteralIpv6List(vararg candidates: String): List<InetAddress> {
+        val out = LinkedHashSet<InetAddress>()
+        for (raw in candidates) {
+            val trimmed = raw.trim()
+            if (trimmed.isBlank() || !trimmed.contains(':')) continue
+            runCatching { InetAddress.getByName(trimmed) }
+                .getOrNull()
+                ?.takeIf { it is Inet6Address }
+                ?.let { out.add(it) }
+        }
+        return out.toList()
+    }
+
+    private fun isLiteralIpv4(host: String): Boolean {
+        val parts = host.split('.')
+        if (parts.size != 4) return false
+        return parts.all { part ->
+            val v = part.toIntOrNull()
+            v != null && v in 0..255
+        }
     }
 
     private fun disconnectVpn() {
         _isRunning.value = false
         _activeServerName.value = "Disconnected"
-        signalWakeupPipe()
-        tunnelJob?.cancel()
+        val jobToStop = tunnelJob
         tunnelJob = null
-        closeVpnInterfaceOnly()
-        closeWakeupPipe()
+        val currentSession = activeSession
+        currentSession?.wake()
+        jobToStop?.cancel()
+        serviceScope.launch {
+            tunnelMutex.withLock {
+                if (jobToStop != null) {
+                    withTimeoutOrNull(800L) {
+                        jobToStop.join()
+                    }
+                }
+                activeSession?.let { s ->
+                    s.closeOnce()
+                    if (activeSession === s) {
+                        activeSession = null
+                    }
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -725,8 +896,15 @@ class DnsVpnService : VpnService() {
         }
         try {
             analyticsRepo.flushNow()
-        } catch (_: Exception) {}
-        disconnectVpn()
+        } catch (_: Throwable) {}
+        _isRunning.value = false
+        _activeServerName.value = "Disconnected"
+        tunnelGeneration.incrementAndGet()
+        activeSession?.wake()
+        tunnelJob?.cancel()
+        tunnelJob = null
+        activeSession?.closeOnce()
+        activeSession = null
         serviceScope.cancel()
         super.onDestroy()
     }

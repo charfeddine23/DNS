@@ -48,6 +48,12 @@ class DnsAnalyticsRepository private constructor(
     private val recentEvents = ArrayDeque<RecentDnsEvent>()
 
     private var persistJob: Job? = null
+    private var snapshotEmitJob: Job? = null
+    @Volatile
+    private var lastSnapshotEmitAtMs: Long = 0L
+    @Volatile
+    private var lastReferenceTimeMs: Long = 0L
+    private val hourFormatter = SimpleDateFormat("HH", Locale.US)
 
     private val _analyticsFlow = MutableStateFlow(DnsAnalyticsSnapshot())
     val analyticsFlow: StateFlow<DnsAnalyticsSnapshot> = _analyticsFlow.asStateFlow()
@@ -74,10 +80,12 @@ class DnsAnalyticsRepository private constructor(
         latencyMs: Long,
         timestampMs: Long = System.currentTimeMillis()
     ) {
-        val snapshot: DnsAnalyticsSnapshot
+        var immediateSnapshot: DnsAnalyticsSnapshot? = null
+        val nowWall = System.currentTimeMillis()
         synchronized(stateLock) {
             totalQueries++
             lastUpdatedMs = timestampMs
+            lastReferenceTimeMs = timestampMs
 
             if (latencyMs >= 0L) {
                 totalLatencyMs += latencyMs
@@ -148,9 +156,17 @@ class DnsAnalyticsRepository private constructor(
                 }
             }
 
-            snapshot = buildSnapshotLocked(timestampMs)
+            if (nowWall - lastSnapshotEmitAtMs >= SNAPSHOT_EMIT_THROTTLE_MS) {
+                lastSnapshotEmitAtMs = nowWall
+                immediateSnapshot = buildSnapshotLocked(timestampMs)
+            }
         }
-        _analyticsFlow.value = snapshot
+        if (immediateSnapshot != null) {
+            snapshotEmitJob?.cancel()
+            _analyticsFlow.value = immediateSnapshot!!
+        } else {
+            scheduleSnapshotEmit()
+        }
         schedulePersist()
     }
 
@@ -168,19 +184,40 @@ class DnsAnalyticsRepository private constructor(
             totalLatencyMs = 0L
             latencySamples = 0L
             lastUpdatedMs = 0L
+            lastReferenceTimeMs = 0L
             domainStats.clear()
             hourlyBuckets.clear()
             recentEvents.clear()
             emptySnapshot = DnsAnalyticsSnapshot()
         }
+        snapshotEmitJob?.cancel()
         persistJob?.cancel()
+        lastSnapshotEmitAtMs = System.currentTimeMillis()
         _analyticsFlow.value = emptySnapshot
         prefs.edit().remove(KEY_ANALYTICS_JSON).apply()
     }
 
     fun flushNow() {
+        snapshotEmitJob?.cancel()
         persistJob?.cancel()
+        val snap = synchronized(stateLock) {
+            buildSnapshotLocked(lastReferenceTimeMs)
+        }
+        lastSnapshotEmitAtMs = System.currentTimeMillis()
+        _analyticsFlow.value = snap
         saveToPrefsNow()
+    }
+
+    private fun scheduleSnapshotEmit() {
+        if (snapshotEmitJob?.isActive == true) return
+        snapshotEmitJob = ioScope.launch {
+            delay(SNAPSHOT_EMIT_THROTTLE_MS)
+            val snap = synchronized(stateLock) {
+                lastSnapshotEmitAtMs = System.currentTimeMillis()
+                buildSnapshotLocked(lastReferenceTimeMs)
+            }
+            _analyticsFlow.value = snap
+        }
     }
 
     private fun schedulePersist() {
@@ -211,7 +248,6 @@ class DnsAnalyticsRepository private constructor(
         val estimatedKb = adsBlockedCount * ESTIMATED_KB_PER_BLOCKED_AD
 
         val nowHour = (if (referenceTimeMs > 0L) referenceTimeMs else System.currentTimeMillis()) / MILLIS_PER_HOUR
-        val hourFormatter = SimpleDateFormat("HH", Locale.US)
         val chartBuckets = if (totalQueries == 0L) {
             emptyList()
         } else {
@@ -405,6 +441,7 @@ class DnsAnalyticsRepository private constructor(
         private const val KEY_ANALYTICS_JSON = "analytics_snapshot_json"
         private const val MILLIS_PER_HOUR = 3_600_000L
         private const val PERSIST_DEBOUNCE_MS = 1_200L
+        private const val SNAPSHOT_EMIT_THROTTLE_MS = 280L
         private const val MAX_TRACKED_DOMAINS = 64
         private const val MAX_RECENT_EVENTS = 12
         private const val ESTIMATED_KB_PER_BLOCKED_AD = 38L

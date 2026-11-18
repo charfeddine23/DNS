@@ -92,7 +92,7 @@
     <string name="auth_relock_1m">1m</string>
     <string name="auth_relock_5m">5m</string>
     <string name="auth_relock_15m">15m</string>
-    <string name="auth_relock_instant_hint">Locks automatically when exiting the app</string>
+    <string name="auth_relock_instant_hint">Stays unlocked until closed from Recents, or auto-locks after 1m of inactivity</string>
     <string name="auth_long_press_hint">Hold any app for 1s to customize its Re-lock Delay</string>
     <string name="auth_app_sheet_title">Re-lock Delay • %1$s</string>
     <string name="auth_app_sheet_custom_label">Custom delay (seconds)</string>

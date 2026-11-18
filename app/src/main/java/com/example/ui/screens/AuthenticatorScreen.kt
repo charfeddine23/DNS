@@ -115,8 +115,11 @@ fun AuthenticatorScreen(
     val successToast = stringResource(R.string.auth_test_success)
     val failedToast = stringResource(R.string.auth_test_failed)
 
+    val canVerifyIdentity = uiState.biometricStatus == BiometricHardwareStatus.READY ||
+        (uiState.authConfig.allowDeviceCredentialFallback && BiometricHelper.canUseDeviceCredential(context))
+
     val launchFingerprintVerification: (subtitle: String, onVerified: () -> Unit) -> Unit = { sub, onVerified ->
-        if (activity != null && uiState.biometricStatus == BiometricHardwareStatus.READY) {
+        if (activity != null && canVerifyIdentity) {
             BiometricHelper.showFingerprintPrompt(
                 activity = activity,
                 title = testPromptTitle,
@@ -223,7 +226,7 @@ fun AuthenticatorScreen(
                     onToggleMasterGuard = { enabled ->
                         if (!enabled &&
                             uiState.isAccessibilityGuardActive &&
-                            uiState.biometricStatus == BiometricHardwareStatus.READY
+                            canVerifyIdentity
                         ) {
                             launchFingerprintVerification(testPromptSubtitle) {
                                 viewModel.setMasterAppGuardEnabled(false)
@@ -395,7 +398,7 @@ fun AuthenticatorScreen(
                             if (!enableLock &&
                                 uiState.authConfig.isMasterGuardEnabled &&
                                 uiState.isAccessibilityGuardActive &&
-                                uiState.biometricStatus == BiometricHardwareStatus.READY
+                                canVerifyIdentity
                             ) {
                                 launchFingerprintVerification(
                                     context.getString(R.string.auth_prompt_subtitle, app.appName)
@@ -430,7 +433,7 @@ fun AuthenticatorScreen(
                     if (!enableLock &&
                         uiState.authConfig.isMasterGuardEnabled &&
                         uiState.isAccessibilityGuardActive &&
-                        uiState.biometricStatus == BiometricHardwareStatus.READY
+                        canVerifyIdentity
                     ) {
                         launchFingerprintVerification(
                             context.getString(

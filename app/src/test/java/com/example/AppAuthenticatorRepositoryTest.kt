@@ -74,7 +74,7 @@ class AppAuthenticatorRepositoryTest {
     }
 
     @Test
-    fun `instant relock stays unlocked inside app and only re-prompts after leaving and re-entering`() {
+    fun `instant relock stays unlocked until closed from recents or 1 minute of inactivity`() {
         val repo = AppAuthenticatorRepository.createIsolatedForTesting(context)
         val gallery = "com.google.android.apps.photos"
         repo.toggleAppLock(gallery, true)
@@ -86,8 +86,8 @@ class AppAuthenticatorRepositoryTest {
 
         // Simulate active prompt preventing duplicate stacked prompts while scanning fingerprint
         repo.setLockPromptActive(gallery, nowMs = now)
-        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 500L))
-        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 1_200L))
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 500L, isLockOverlayVisible = true))
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 1_200L, isLockOverlayVisible = true))
 
         // User unlocks via fingerprint
         repo.markAppUnlocked(gallery, nowMs = now + 1_400L)
@@ -97,13 +97,52 @@ class AppAuthenticatorRepositoryTest {
         repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = now + 1_800L)
         assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 2_000L))
 
-        // Repeated in-app window state events keep the app unlocked with zero extra prompts
+        // Repeated in-app window state events keep the app unlocked indefinitely while actively in use
         assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 30_000L))
         assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 120_000L))
 
-        // User genuinely exits to Home launcher or another app -> re-locks immediately for next entry
+        // User leaves to Chrome without closing Gallery from Recents -> stays unlocked if returning within 1 minute
         repo.onNonProtectedAppForegrounded("com.android.chrome", nowMs = now + 125_000L)
-        assertTrue(repo.shouldPromptLock(gallery, nowMs = now + 125_500L))
+        assertFalse(repo.shouldPromptLock(gallery, nowMs = now + 165_000L))
+
+        // User leaves again (or opens Recents) and stays inactive for >= 60 seconds -> auto re-locks!
+        repo.onProtectedAppSentToBackground(nowMs = now + 170_000L)
+        assertTrue(repo.shouldPromptLock(gallery, nowMs = now + 230_500L))
+
+        // Unlock again, then close explicitly from Recents -> re-locks IMMEDIATELY even 2s later
+        val unlock2 = now + 231_000L
+        repo.markAppUnlocked(gallery, nowMs = unlock2)
+        assertTrue(gallery in repo.getInstantUnlockedPackages())
+        repo.onProtectedAppSentToBackground(nowMs = unlock2 + 1_000L)
+        repo.onAppClosedFromRecents(gallery, nowMs = unlock2 + 1_800L)
+        assertTrue(repo.shouldPromptLock(gallery, nowMs = unlock2 + 2_500L))
+    }
+
+    @Test
+    fun `clear all in recents and stale prompt self-healing enforce strict relock`() {
+        val repo = AppAuthenticatorRepository.createIsolatedForTesting(context)
+        val whatsapp = "com.whatsapp"
+        val telegram = "org.telegram.messenger"
+        repo.setMasterGuardEnabled(true)
+        repo.setRelockTimeoutSeconds(0)
+        repo.toggleAppLock(whatsapp, true)
+        repo.toggleAppLock(telegram, true)
+
+        val t0 = 1_760_000_500_000L
+        repo.markAppUnlocked(whatsapp, nowMs = t0)
+        repo.onProtectedAppSentToBackground(nowMs = t0 + 5_000L)
+        repo.markAppUnlocked(telegram, nowMs = t0 + 6_000L)
+        repo.onProtectedAppSentToBackground(nowMs = t0 + 10_000L)
+
+        // Clear all from Recents must re-lock both apps immediately
+        repo.onAllAppsClosedFromRecents(nowMs = t0 + 11_000L)
+        assertTrue(repo.shouldPromptLock(whatsapp, nowMs = t0 + 12_000L))
+        assertTrue(repo.shouldPromptLock(telegram, nowMs = t0 + 12_500L))
+
+        // If AppLockActivity is no longer visible after initial launch grace window, stale prompt state heals instead of allowing bypass
+        repo.setLockPromptActive(whatsapp, nowMs = t0 + 20_000L)
+        assertFalse(repo.shouldPromptLock(whatsapp, nowMs = t0 + 20_500L, isLockOverlayVisible = false))
+        assertTrue(repo.shouldPromptLock(whatsapp, nowMs = t0 + 22_000L, isLockOverlayVisible = false))
     }
 
     @Test
@@ -157,21 +196,26 @@ class AppAuthenticatorRepositoryTest {
         repo.markAppUnlocked(whatsapp, nowMs = startMs)
         repo.markAppUnlocked(telegram, nowMs = startMs + 5_000L)
 
-        // Exit to launcher after settle window
+        // Exit to launcher after settle window without closing from Recents
         repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = startMs + 10_000L)
 
-        // WhatsApp (Instant 0s) must re-lock immediately, while Telegram (60s) stays unlocked
-        assertTrue(repo.shouldPromptLock(whatsapp, nowMs = startMs + 15_000L))
+        // WhatsApp (Instant 0s) stays unlocked within <60s if not closed from Recents, and Telegram (60s) stays unlocked
+        assertFalse(repo.shouldPromptLock(whatsapp, nowMs = startMs + 15_000L))
         assertFalse(repo.shouldPromptLock(telegram, nowMs = startMs + 15_000L))
 
+        // Closing WhatsApp from Recents immediately locks WhatsApp on next open
+        repo.onAppClosedFromRecents(whatsapp, nowMs = startMs + 16_000L)
+        assertTrue(repo.shouldPromptLock(whatsapp, nowMs = startMs + 16_500L))
+        assertFalse(repo.shouldPromptLock(telegram, nowMs = startMs + 16_500L))
+
         // Notes (fallback 30s) was never unlocked -> prompts; after unlock, stays unlocked for 30s
-        assertTrue(repo.shouldPromptLock(notes, nowMs = startMs + 15_000L))
-        repo.markAppUnlocked(notes, nowMs = startMs + 15_000L)
+        assertTrue(repo.shouldPromptLock(notes, nowMs = startMs + 17_000L))
+        repo.markAppUnlocked(notes, nowMs = startMs + 17_000L)
         repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = startMs + 20_000L)
         assertFalse(repo.shouldPromptLock(notes, nowMs = startMs + 35_000L))
         // Leave again and return after the 30s grace window expires -> prompts again
         repo.onNonProtectedAppForegrounded("com.android.launcher3", nowMs = startMs + 40_000L)
-        assertTrue(repo.shouldPromptLock(notes, nowMs = startMs + 46_000L))
+        assertTrue(repo.shouldPromptLock(notes, nowMs = startMs + 48_000L))
 
         // Persistence check
         val reloaded = AppAuthenticatorRepository.createIsolatedForTesting(context)

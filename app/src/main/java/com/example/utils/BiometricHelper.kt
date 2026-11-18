@@ -8,15 +8,29 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
 import com.example.data.model.BiometricHardwareStatus
 
 object BiometricHelper {
 
+    private fun biometricAuthenticators(): Int =
+        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            BiometricManager.Authenticators.BIOMETRIC_WEAK
+
+    private fun credentialAuthenticators(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        } else {
+            // On Android 9/10, androidx.biometric rejects BIOMETRIC_STRONG + DEVICE_CREDENTIAL combinations
+            BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        }
+
     fun checkHardwareStatus(context: Context): BiometricHardwareStatus {
         val manager = BiometricManager.from(context)
-        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
-            BiometricManager.Authenticators.BIOMETRIC_WEAK
-        return when (manager.canAuthenticate(authenticators)) {
+        return when (manager.canAuthenticate(biometricAuthenticators())) {
             BiometricManager.BIOMETRIC_SUCCESS -> BiometricHardwareStatus.READY
             BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> BiometricHardwareStatus.NO_ENROLLED_BIOMETRICS
             BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE,
@@ -27,10 +41,7 @@ object BiometricHelper {
 
     fun canUseDeviceCredential(context: Context): Boolean {
         val manager = BiometricManager.from(context)
-        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
-            BiometricManager.Authenticators.BIOMETRIC_WEAK or
-            BiometricManager.Authenticators.DEVICE_CREDENTIAL
-        return manager.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
+        return manager.canAuthenticate(credentialAuthenticators()) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     fun showFingerprintPrompt(
@@ -40,8 +51,16 @@ object BiometricHelper {
         negativeButtonText: String,
         allowDeviceCredential: Boolean,
         onSuccess: () -> Unit,
-        onErrorOrCancelled: (String?) -> Unit
+        onErrorOrCancelled: (String?) -> Unit,
+        onCancelled: (() -> Unit)? = null
     ) {
+        if (activity.isFinishing || activity.isDestroyed ||
+            !activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        ) {
+            onCancelled?.invoke() ?: onErrorOrCancelled(null)
+            return
+        }
+
         val executor = ContextCompat.getMainExecutor(activity)
         val biometricPrompt = BiometricPrompt(
             activity,
@@ -54,7 +73,14 @@ object BiometricHelper {
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    onErrorOrCancelled(errString.toString())
+                    val isCancel = errorCode == BiometricPrompt.ERROR_CANCELED ||
+                        errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                        errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON
+                    if (isCancel && onCancelled != null) {
+                        onCancelled()
+                    } else {
+                        onErrorOrCancelled(if (isCancel) null else errString.toString())
+                    }
                 }
 
                 override fun onAuthenticationFailed() {
@@ -70,16 +96,9 @@ object BiometricHelper {
             .setConfirmationRequired(false)
 
         if (allowDeviceCredential && canUseDeviceCredential(activity)) {
-            builder.setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                    BiometricManager.Authenticators.BIOMETRIC_WEAK or
-                    BiometricManager.Authenticators.DEVICE_CREDENTIAL
-            )
+            builder.setAllowedAuthenticators(credentialAuthenticators())
         } else {
-            builder.setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                    BiometricManager.Authenticators.BIOMETRIC_WEAK
-            )
+            builder.setAllowedAuthenticators(biometricAuthenticators())
             builder.setNegativeButtonText(negativeButtonText)
         }
 
@@ -95,8 +114,7 @@ object BiometricHelper {
             Intent(Settings.ACTION_BIOMETRIC_ENROLL).apply {
                 putExtra(
                     Settings.EXTRA_BIOMETRIC_AUTHENTICATORS_ALLOWED,
-                    BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                        BiometricManager.Authenticators.BIOMETRIC_WEAK
+                    biometricAuthenticators()
                 )
             }
         } else {

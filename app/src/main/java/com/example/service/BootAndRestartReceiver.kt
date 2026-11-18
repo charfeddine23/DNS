@@ -6,8 +6,10 @@ import android.content.Intent
 import android.net.VpnService
 import android.util.Log
 import com.example.data.preferences.PreferencesManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 
 class BootAndRestartReceiver : BroadcastReceiver() {
 
@@ -18,45 +20,52 @@ class BootAndRestartReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
         val appContext = context.applicationContext
+        val pendingResult = goAsync()
 
-        val shouldResume = when (action) {
-            Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                DnsVpnService.isShouldStayActive(appContext)
-            }
-            Intent.ACTION_BOOT_COMPLETED,
-            "android.intent.action.QUICKBOOT_POWERON",
-            "com.htc.intent.action.QUICKBOOT_POWERON" -> {
-                val autoStartEnabled = try {
-                    runBlocking { PreferencesManager(appContext).autoStartBootFlow.first() }
-                } catch (_: Exception) {
-                    false
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val shouldResume = when (action) {
+                    Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                        DnsVpnService.isShouldStayActive(appContext)
+                    }
+                    Intent.ACTION_BOOT_COMPLETED,
+                    "android.intent.action.QUICKBOOT_POWERON",
+                    "com.htc.intent.action.QUICKBOOT_POWERON" -> {
+                        val autoStartEnabled = try {
+                            PreferencesManager(appContext).autoStartBootFlow.first()
+                        } catch (_: Throwable) {
+                            false
+                        }
+                        autoStartEnabled || DnsVpnService.isShouldStayActive(appContext)
+                    }
+                    else -> false
                 }
-                autoStartEnabled || DnsVpnService.isShouldStayActive(appContext)
+
+                if (!shouldResume) return@launch
+
+                val needsConsent = try {
+                    VpnService.prepare(appContext) != null
+                } catch (_: Throwable) {
+                    true
+                }
+
+                if (needsConsent) {
+                    Log.w(TAG, "Skipping auto-resume because VPN permission has not been granted yet.")
+                    return@launch
+                }
+
+                val config = DnsVpnService.restoreLastKnownConfig(appContext)
+                DnsVpnService.startVpn(
+                    context = appContext,
+                    serverName = config.serverName,
+                    primaryIpv4 = config.primaryIpv4,
+                    secondaryIpv4 = config.secondaryIpv4,
+                    primaryIpv6 = config.primaryIpv6,
+                    secondaryIpv6 = config.secondaryIpv6
+                )
+            } finally {
+                runCatching { pendingResult.finish() }
             }
-            else -> false
         }
-
-        if (!shouldResume) return
-
-        val needsConsent = try {
-            VpnService.prepare(appContext) != null
-        } catch (_: Exception) {
-            true
-        }
-
-        if (needsConsent) {
-            Log.w(TAG, "Skipping auto-resume because VPN permission has not been granted yet.")
-            return
-        }
-
-        val config = DnsVpnService.restoreLastKnownConfig(appContext)
-        DnsVpnService.startVpn(
-            context = appContext,
-            serverName = config.serverName,
-            primaryIpv4 = config.primaryIpv4,
-            secondaryIpv4 = config.secondaryIpv4,
-            primaryIpv6 = config.primaryIpv6,
-            secondaryIpv6 = config.secondaryIpv6
-        )
     }
 }
