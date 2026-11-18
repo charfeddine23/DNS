@@ -1,6 +1,7 @@
 package com.example
 
 import android.content.Intent
+import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -8,10 +9,8 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -69,11 +68,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -137,8 +134,61 @@ private data class NavTabSpec(
 
 class MainActivity : FragmentActivity() {
 
+    companion object {
+        private const val VPN_REQUEST_CODE = 100
+        private const val INSTALL_APPS_REQUEST_CODE = 101
+    }
+
     private val viewModel: DnsPulseViewModel by viewModels()
     private var isFullScreenEnabled: Boolean = false
+    private var pendingApkInstall: File? = null
+
+    fun startVpnWithPermissionCheck(prepareIntent: Intent? = null) {
+        val intent = prepareIntent ?: try {
+            VpnService.prepare(this)
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                "VPN permission unavailable: ${e.localizedMessage}",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        if (intent != null) {
+            try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, VPN_REQUEST_CODE)
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this,
+                    "VPN permission dialog unavailable: ${e.localizedMessage}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        } else {
+            viewModel.startVpn(this)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            VPN_REQUEST_CODE -> {
+                if (resultCode == RESULT_OK) {
+                    viewModel.startVpn(this)
+                }
+            }
+            INSTALL_APPS_REQUEST_CODE -> {
+                val file = pendingApkInstall
+                if (file != null && UpdateManager.canInstallPackages(this)) {
+                    UpdateManager.triggerApkInstall(this, file)
+                    pendingApkInstall = null
+                }
+            }
+        }
+    }
 
     private fun applyFullScreenWindowState(enabled: Boolean) {
         isFullScreenEnabled = enabled
@@ -231,7 +281,6 @@ class MainActivity : FragmentActivity() {
                 val snackbarHostState = remember { SnackbarHostState() }
                 val pagerState = rememberPagerState(initialPage = 0, pageCount = { 4 })
                 val coroutineScope = rememberCoroutineScope()
-                var pendingApkInstall by remember { mutableStateOf<File?>(null) }
                 val currentSimpleMode by rememberUpdatedState(uiState.simpleMode)
                 val settledOrCurrentPage by remember {
                     derivedStateOf { pagerState.currentPage }
@@ -261,16 +310,6 @@ class MainActivity : FragmentActivity() {
                     slideToPage(0)
                 }
 
-                val installPermissionLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.StartActivityForResult()
-                ) {
-                    val file = pendingApkInstall
-                    if (file != null && UpdateManager.canInstallPackages(this@MainActivity)) {
-                        UpdateManager.triggerApkInstall(this@MainActivity, file)
-                        pendingApkInstall = null
-                    }
-                }
-
                 val triggerApkInstallFlow: (File) -> Unit = { apkFile ->
                     when (val check = UpdateManager.verifyApkForDirectUpdate(this@MainActivity, apkFile)) {
                         is UpdateManager.ApkCompatibilityResult.Incompatible -> {
@@ -297,9 +336,19 @@ class MainActivity : FragmentActivity() {
                                     "Please allow \"Install unknown apps\" for DNS Pulse to update.",
                                     Toast.LENGTH_LONG
                                 ).show()
-                                installPermissionLauncher.launch(
-                                    UpdateManager.buildManageUnknownSourcesIntent(this@MainActivity)
-                                )
+                                try {
+                                    @Suppress("DEPRECATION")
+                                    startActivityForResult(
+                                        UpdateManager.buildManageUnknownSourcesIntent(this@MainActivity),
+                                        INSTALL_APPS_REQUEST_CODE
+                                    )
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Unable to open install settings: ${e.localizedMessage}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             }
                         }
                     }
@@ -452,7 +501,8 @@ class MainActivity : FragmentActivity() {
                                                     uiState = uiState,
                                                     viewModel = viewModel,
                                                     onFallbackRequired = onFallbackRequiredStable,
-                                                    onLaunchWirelessSettings = onLaunchWirelessSettingsStable
+                                                    onLaunchWirelessSettings = onLaunchWirelessSettingsStable,
+                                                    onRequestVpnStart = ::startVpnWithPermissionCheck
                                                 )
                                                 1 -> AnalyticsScreen(
                                                     uiState = uiState,

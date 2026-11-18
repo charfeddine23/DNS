@@ -1,9 +1,6 @@
 package com.example.ui.screens
 
-import android.net.VpnService
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -83,18 +80,11 @@ fun HomeScreen(
     viewModel: DnsPulseViewModel,
     onFallbackRequired: (String) -> Unit,
     onLaunchWirelessSettings: () -> Unit,
+    onRequestVpnStart: (Intent?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val simpleMode = LocalSimpleMode.current
-
-    val vpnLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            viewModel.startVpn(context)
-        }
-    }
 
     val isDoTActive = uiState.privateDnsState.mode is PrivateDnsMode.Strict
     val isAdGuardDoT = isDoTActive && uiState.privateDnsState.hostname.equals("dns.adguard.com", ignoreCase = true)
@@ -238,33 +228,7 @@ fun HomeScreen(
                                 if (uiState.isVpnActive) {
                                     viewModel.stopVpn(context)
                                 } else {
-                                    var prepareFailed = false
-                                    val prepareIntent = try {
-                                        VpnService.prepare(context)
-                                    } catch (e: Exception) {
-                                        prepareFailed = true
-                                        Toast.makeText(
-                                            context,
-                                            "VPN permission unavailable: ${e.localizedMessage}",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                        null
-                                    }
-                                    if (!prepareFailed) {
-                                        if (prepareIntent != null) {
-                                            try {
-                                                vpnLauncher.launch(prepareIntent)
-                                            } catch (e: Exception) {
-                                                Toast.makeText(
-                                                    context,
-                                                    "VPN permission dialog unavailable: ${e.localizedMessage}",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                        } else {
-                                            viewModel.startVpn(context)
-                                        }
-                                    }
+                                    onRequestVpnStart(null)
                                 }
                             }
                         }
@@ -366,15 +330,7 @@ fun HomeScreen(
                                 server = settledServer,
                                 context = context,
                                 onVpnPermissionRequired = { prepareIntent ->
-                                    try {
-                                        vpnLauncher.launch(prepareIntent)
-                                    } catch (e: Exception) {
-                                        Toast.makeText(
-                                            context,
-                                            "VPN permission dialog unavailable: ${e.localizedMessage}",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
+                                    onRequestVpnStart(prepareIntent)
                                 },
                                 onPrivateDnsFallback = onFallbackRequired
                             )
