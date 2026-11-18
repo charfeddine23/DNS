@@ -12,11 +12,20 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +38,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,10 +54,6 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerDefaults
-import androidx.compose.foundation.pager.PagerSnapDistance
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
@@ -68,14 +75,19 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -85,7 +97,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.util.lerp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -104,10 +115,9 @@ import com.example.ui.theme.DeepVoidBlack
 import com.example.ui.theme.DnsPulseTheme
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
-import com.example.ui.theme.GlassBorder
-import com.example.ui.theme.GlassTopSpecular
 import com.example.ui.theme.HoloViolet
 import com.example.ui.theme.LocalAppThemeStyle
+import com.example.ui.theme.LocalBottomDockClearance
 import com.example.ui.theme.LocalIsDarkTheme
 import com.example.ui.theme.LocalPageActive
 import com.example.ui.theme.LocalSimpleMode
@@ -119,9 +129,7 @@ import com.example.utils.PrivateDnsMode
 import com.example.utils.UpdateDownloadState
 import com.example.utils.UpdateManager
 import com.example.viewmodel.DnsPulseViewModel
-import kotlinx.coroutines.launch
 import java.io.File
-import kotlin.math.absoluteValue
 
 private data class NavTabSpec(
     val index: Int,
@@ -279,35 +287,31 @@ class MainActivity : FragmentActivity() {
                     controller.isAppearanceLightNavigationBars = !isDarkTheme
                 }
                 val snackbarHostState = remember { SnackbarHostState() }
-                val pagerState = rememberPagerState(initialPage = 0, pageCount = { 4 })
-                val coroutineScope = rememberCoroutineScope()
+                var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+                val saveableStateHolder = rememberSaveableStateHolder()
                 val currentSimpleMode by rememberUpdatedState(uiState.simpleMode)
-                val settledOrCurrentPage by remember {
-                    derivedStateOf { pagerState.currentPage }
-                }
 
-                val slideToPage: (Int) -> Unit = remember(pagerState, coroutineScope) {
+                val smoothNavEasing = remember { CubicBezierEasing(0.16f, 1.0f, 0.30f, 1.0f) }
+                val smoothPagePosition by animateFloatAsState(
+                    targetValue = selectedTab.toFloat(),
+                    animationSpec = tween(
+                        durationMillis = if (currentSimpleMode) 300 else 580,
+                        easing = if (currentSimpleMode) FastOutSlowInEasing else smoothNavEasing
+                    ),
+                    label = "smooth_page_position"
+                )
+
+                val navigateToTab: (Int) -> Unit = remember {
                     { targetPage ->
-                        coroutineScope.launch {
-                            if (currentSimpleMode) {
-                                pagerState.scrollToPage(targetPage)
-                            } else {
-                                val distance = (targetPage - pagerState.currentPage).absoluteValue
-                                pagerState.animateScrollToPage(
-                                    page = targetPage,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = if (distance > 1) 640f else 520f
-                                    )
-                                )
-                            }
+                        if (targetPage != selectedTab) {
+                            selectedTab = targetPage
                         }
                     }
                 }
 
-                // Pressing back from Authenticator, Analytics, or Settings smoothly slides back to Home (Shield)
-                BackHandler(enabled = settledOrCurrentPage != 0) {
-                    slideToPage(0)
+                // Pressing back from Analytics, Authenticator, or Settings smoothly returns to Shield
+                BackHandler(enabled = selectedTab != 0) {
+                    navigateToTab(0)
                 }
 
                 val triggerApkInstallFlow: (File) -> Unit = { apkFile ->
@@ -405,8 +409,8 @@ class MainActivity : FragmentActivity() {
                         Unit
                     }
                 }
-                val onNavigateToShieldStable = remember(slideToPage) {
-                    { slideToPage(0) }
+                val onNavigateToShieldStable = remember(navigateToTab) {
+                    { navigateToTab(0) }
                 }
 
                 Box(
@@ -420,9 +424,7 @@ class MainActivity : FragmentActivity() {
                             isProtected = isProtected,
                             isAdGuardShield = isAdGuardDoT,
                             ambientGlowEnabled = uiState.ambientGlow,
-                            pageOffsetFractionProvider = {
-                                pagerState.currentPage + pagerState.currentPageOffsetFraction
-                            }
+                            pageOffsetFractionProvider = { smoothPagePosition }
                         )
                     }
 
@@ -438,86 +440,121 @@ class MainActivity : FragmentActivity() {
                         snackbarHost = {
                             SnackbarHost(
                                 hostState = snackbarHostState,
-                                modifier = Modifier.padding(bottom = 86.dp)
+                                modifier = Modifier
+                                    .windowInsetsPadding(stableNavInsets)
+                                    .padding(start = 12.dp, end = 12.dp, bottom = 98.dp)
                             )
                         },
                         contentWindowInsets = stableSafeInsets
                     ) { innerPadding ->
                         val originalLayoutDirection = LocalLayoutDirection.current
-                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        val bottomDockClearance = innerPadding.calculateBottomPadding() + 106.dp
+
+                        CompositionLocalProvider(
+                            LocalLayoutDirection provides LayoutDirection.Ltr,
+                            LocalBottomDockClearance provides bottomDockClearance
+                        ) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(
-                                        top = innerPadding.calculateTopPadding()
+                                        top = innerPadding.calculateTopPadding(),
+                                        start = innerPadding.calculateStartPadding(LayoutDirection.Ltr),
+                                        end = innerPadding.calculateEndPadding(LayoutDirection.Ltr)
                                     )
                             ) {
-                                HorizontalPager(
-                                    state = pagerState,
-                                    beyondViewportPageCount = 3,
-                                    key = { it },
-                                    flingBehavior = PagerDefaults.flingBehavior(
-                                        state = pagerState,
-                                        pagerSnapDistance = PagerSnapDistance.atMost(1),
-                                        snapAnimationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                            stiffness = 520f
-                                        ),
-                                        snapPositionalThreshold = 0.35f
-                                    ),
-                                    modifier = Modifier.fillMaxSize()
-                                ) { page ->
-                                    val isPageActive by remember(page) {
-                                        derivedStateOf {
-                                            pagerState.currentPage == page || pagerState.targetPage == page
-                                        }
-                                    }
+                                // Overlap-free, GPU-composited directional Fade-Through transition
+                                // Direct target transition skips intermediate tabs (no cross-tab flashing or gesture conflicts)
+                                AnimatedContent(
+                                    targetState = selectedTab,
+                                    transitionSpec = {
+                                        val direction = if (targetState > initialState) 1 else -1
+                                        val spec = if (currentSimpleMode) {
+                                            (fadeIn(
+                                                animationSpec = tween(
+                                                    durationMillis = 300,
+                                                    delayMillis = 110,
+                                                    easing = LinearOutSlowInEasing
+                                                )
+                                            )) togetherWith fadeOut(
+                                                animationSpec = tween(
+                                                    durationMillis = 140,
+                                                    easing = FastOutLinearInEasing
+                                                )
+                                            )
+                                        } else {
+                                            val enter = fadeIn(
+                                                animationSpec = tween(
+                                                    durationMillis = 440,
+                                                    delayMillis = 160,
+                                                    easing = LinearOutSlowInEasing
+                                                )
+                                            ) + slideInHorizontally(
+                                                animationSpec = tween(
+                                                    durationMillis = 560,
+                                                    delayMillis = 110,
+                                                    easing = smoothNavEasing
+                                                )
+                                            ) { fullWidth -> direction * (fullWidth / 8) }
 
+                                            val exit = fadeOut(
+                                                animationSpec = tween(
+                                                    durationMillis = 180,
+                                                    easing = FastOutLinearInEasing
+                                                )
+                                            ) + slideOutHorizontally(
+                                                animationSpec = tween(
+                                                    durationMillis = 260,
+                                                    easing = FastOutLinearInEasing
+                                                )
+                                            ) { fullWidth -> -direction * (fullWidth / 12) }
+
+                                            enter togetherWith exit
+                                        }
+                                        spec using SizeTransform(clip = true)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clipToBounds(),
+                                    label = "main_tab_navigation"
+                                ) { page ->
+                                    val isCurrentTarget = selectedTab == page
                                     CompositionLocalProvider(
                                         LocalLayoutDirection provides originalLayoutDirection,
-                                        LocalPageActive provides isPageActive
+                                        LocalPageActive provides isCurrentTarget
                                     ) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .then(
-                                                    if (uiState.simpleMode) {
-                                                        Modifier
-                                                    } else {
-                                                        Modifier.graphicsLayer {
-                                                            val pageOffset = ((pagerState.currentPage - page) +
-                                                                pagerState.currentPageOffsetFraction)
-                                                                .absoluteValue.coerceIn(0f, 1f)
-                                                            val scale = lerp(1f, 0.965f, pageOffset)
-                                                            scaleX = scale
-                                                            scaleY = scale
-                                                            alpha = lerp(1f, 0.80f, pageOffset)
-                                                        }
-                                                    }
-                                                )
+                                                .clipToBounds()
+                                                .graphicsLayer {
+                                                    compositingStrategy = CompositingStrategy.Offscreen
+                                                }
                                         ) {
-                                            when (page) {
-                                                0 -> HomeScreen(
-                                                    uiState = uiState,
-                                                    viewModel = viewModel,
-                                                    onFallbackRequired = onFallbackRequiredStable,
-                                                    onLaunchWirelessSettings = onLaunchWirelessSettingsStable,
-                                                    onRequestVpnStart = ::startVpnWithPermissionCheck
-                                                )
-                                                1 -> AnalyticsScreen(
-                                                    uiState = uiState,
-                                                    viewModel = viewModel,
-                                                    onNavigateToShield = onNavigateToShieldStable
-                                                )
-                                                2 -> AuthenticatorScreen(
-                                                    uiState = uiState,
-                                                    viewModel = viewModel
-                                                )
-                                                3 -> SettingsScreen(
-                                                    uiState = uiState,
-                                                    viewModel = viewModel,
-                                                    onLaunchWirelessSettings = onLaunchWirelessSettingsStable
-                                                )
+                                            saveableStateHolder.SaveableStateProvider(key = page) {
+                                                when (page) {
+                                                    0 -> HomeScreen(
+                                                        uiState = uiState,
+                                                        viewModel = viewModel,
+                                                        onFallbackRequired = onFallbackRequiredStable,
+                                                        onLaunchWirelessSettings = onLaunchWirelessSettingsStable,
+                                                        onRequestVpnStart = ::startVpnWithPermissionCheck
+                                                    )
+                                                    1 -> AnalyticsScreen(
+                                                        uiState = uiState,
+                                                        viewModel = viewModel,
+                                                        onNavigateToShield = onNavigateToShieldStable
+                                                    )
+                                                    2 -> AuthenticatorScreen(
+                                                        uiState = uiState,
+                                                        viewModel = viewModel
+                                                    )
+                                                    3 -> SettingsScreen(
+                                                        uiState = uiState,
+                                                        viewModel = viewModel,
+                                                        onLaunchWirelessSettings = onLaunchWirelessSettingsStable
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -525,12 +562,10 @@ class MainActivity : FragmentActivity() {
 
                                 // Floating Glass Slide Dock pinned cleanly above system navigation bar (LTR fixed left-to-right)
                                 FloatingPulseNavBar(
-                                    selectedTabProvider = { pagerState.targetPage },
-                                    continuousPagePositionProvider = {
-                                        pagerState.currentPage + pagerState.currentPageOffsetFraction
-                                    },
+                                    selectedTabProvider = { selectedTab },
+                                    continuousPagePositionProvider = { smoothPagePosition },
                                     activeAccent = if (isProtected && isAdGuardDoT) EmeraldMint else ElectricCyan,
-                                    onSelectPage = slideToPage,
+                                    onSelectPage = navigateToTab,
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
                                         .windowInsetsPadding(stableNavInsets)
@@ -625,6 +660,7 @@ private fun FloatingPulseNavBar(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(5.dp)
+                .clip(RoundedCornerShape(23.dp))
         ) {
             val tabWidth = maxWidth / tabs.size
             val slotWidthPx = constraints.maxWidth.toFloat() / tabs.size
@@ -665,9 +701,9 @@ private fun FloatingPulseNavBar(
                     } else {
                         animateFloatAsState(
                             targetValue = if (isSelected) 1.12f else 1f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMedium
+                            animationSpec = tween(
+                                durationMillis = 480,
+                                easing = CubicBezierEasing(0.16f, 1.0f, 0.30f, 1.0f)
                             ),
                             label = "tab_icon_scale_${tab.index}"
                         )

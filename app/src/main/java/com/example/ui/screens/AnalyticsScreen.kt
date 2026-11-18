@@ -71,6 +71,7 @@ import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.HoloViolet
+import com.example.ui.theme.LocalBottomDockClearance
 import com.example.ui.theme.OnAccentInk
 import com.example.ui.theme.SubtleSurfaceBorder
 import com.example.ui.theme.SubtleSurfaceFill
@@ -107,7 +108,7 @@ fun AnalyticsScreen(
                 .widthIn(max = 720.dp)
                 .padding(horizontal = 16.dp)
                 .testTag("analytics_screen"),
-            contentPadding = PaddingValues(bottom = 110.dp),
+            contentPadding = PaddingValues(bottom = LocalBottomDockClearance.current),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // Header

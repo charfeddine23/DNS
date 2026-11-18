@@ -86,6 +86,7 @@ import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.HoloMagenta
 import com.example.ui.theme.HoloViolet
+import com.example.ui.theme.LocalBottomDockClearance
 import com.example.ui.theme.LocalPageActive
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.OnAccentInk
@@ -124,7 +125,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .widthIn(max = 720.dp)
                 .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(bottom = 110.dp),
+            contentPadding = PaddingValues(bottom = LocalBottomDockClearance.current),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {

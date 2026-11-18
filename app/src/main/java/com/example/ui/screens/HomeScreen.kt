@@ -66,6 +66,7 @@ import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.GlassSurface
+import com.example.ui.theme.LocalBottomDockClearance
 import com.example.ui.theme.LocalPageActive
 import com.example.ui.theme.LocalSimpleMode
 import com.example.ui.theme.TextPrimary
@@ -130,7 +131,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .widthIn(max = 720.dp)
                 .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(bottom = 110.dp),
+            contentPadding = PaddingValues(bottom = LocalBottomDockClearance.current),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // Top Header

@@ -131,10 +131,14 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         val hw = BiometricHelper.checkHardwareStatus(context)
         val accessibilityEnabled = AppAuthenticatorRepository.isAccessibilityServiceEnabled(context)
         _uiState.update {
-            it.copy(
-                biometricStatus = hw,
-                isAccessibilityGuardActive = accessibilityEnabled
-            )
+            if (it.biometricStatus == hw && it.isAccessibilityGuardActive == accessibilityEnabled) {
+                it
+            } else {
+                it.copy(
+                    biometricStatus = hw,
+                    isAccessibilityGuardActive = accessibilityEnabled
+                )
+            }
         }
     }
 

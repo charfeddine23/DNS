@@ -66,6 +66,7 @@ import com.example.ui.components.GlassCard
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldMint
 import com.example.ui.theme.GlassBorder
+import com.example.ui.theme.LocalBottomDockClearance
 import com.example.ui.theme.SubtleSurfaceBorder
 import com.example.ui.theme.SubtleSurfaceFill
 import com.example.ui.theme.TextPrimary
@@ -87,6 +88,7 @@ fun AuthenticatorScreen(
     var delaySheetTargetPkg by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(220)
         viewModel.refreshAuthenticatorEnvironment()
         if (uiState.installedApps.isEmpty() && !uiState.isLoadingApps) {
             viewModel.loadInstalledApps()
@@ -148,7 +150,7 @@ fun AuthenticatorScreen(
                 .widthIn(max = 720.dp)
                 .padding(horizontal = 16.dp)
                 .testTag("authenticator_screen"),
-            contentPadding = PaddingValues(bottom = 110.dp),
+            contentPadding = PaddingValues(bottom = LocalBottomDockClearance.current),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // Header

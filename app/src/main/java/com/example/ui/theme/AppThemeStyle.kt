@@ -2,6 +2,7 @@ package com.example.ui.theme
 
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.unit.dp
 
 enum class AppAppearanceMode(
     val testTagSuffix: String
@@ -72,3 +73,4 @@ val LocalAppThemeStyle = staticCompositionLocalOf { AppThemeStyle.CHROMATIC_FROS
 val LocalSimpleMode = staticCompositionLocalOf { false }
 val LocalIsDarkTheme = staticCompositionLocalOf { true }
 val LocalPageActive = compositionLocalOf { true }
+val LocalBottomDockClearance = compositionLocalOf { 112.dp }
