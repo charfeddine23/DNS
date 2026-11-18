@@ -5,39 +5,46 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Segmented Ring Arcs with clean gaps around nodes & pulse line -->
+    <!-- Globe top hemisphere wireframe above DNS -->
     <path
-        android:pathData="M 59.69,31.20 A 23.5,23.5 0 0,1 77.47,52.77"
+        android:pathData="M 35.5,47.0 A 19.0,19.0 0 0,1 72.5,47.0"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
-        android:strokeWidth="3.2" />
+        android:strokeWidth="2.1" />
     <path
-        android:pathData="M 70.90,70.32 A 23.5,23.5 0 0,1 37.10,70.32"
+        android:pathData="M 43.2,47.0 C 43.8,37.0 48.2,29.8 54.0,28.2 C 59.8,29.8 64.2,37.0 64.8,47.0"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
-        android:strokeWidth="3.2" />
+        android:strokeWidth="1.9" />
     <path
-        android:pathData="M 30.53,52.77 A 23.5,23.5 0 0,1 48.31,31.20"
+        android:pathData="M 54.0,28.2 L 54.0,47.0"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
-        android:strokeWidth="3.2" />
+        android:strokeWidth="2.0" />
+    <path
+        android:pathData="M 38.6,37.8 Q 54.0,42.5 69.4,37.8"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.8" />
 
-    <!-- Pulse Waveform -->
+    <!-- Bold geometric "D" -->
     <path
-        android:pathData="M 23.0,57.0 L 37.0,57.0 L 42.8,48.5 L 48.0,64.5 L 54.2,40.0 L 60.2,57.0 L 85.0,57.0"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="4.0" />
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M 28.0,50.0 L 38.2,50.0 C 42.1,50.0 44.3,52.4 44.3,56.5 C 44.3,60.6 42.1,63.0 38.2,63.0 L 28.0,63.0 Z M 32.0,53.2 L 32.0,59.8 L 37.6,59.8 C 39.6,59.8 40.5,58.6 40.5,56.5 C 40.5,54.4 39.6,53.2 37.6,53.2 Z" />
 
-    <!-- Three Ring Nodes -->
+    <!-- Bold geometric "N" -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M 50.5,30.5 a 3.5,3.5 0 1,0 7,0 a 3.5,3.5 0 1,0 -7,0 Z" />
+        android:pathData="M 47.0,50.0 L 51.2,50.0 L 57.1,57.8 L 57.1,50.0 L 61.0,50.0 L 61.0,63.0 L 56.9,63.0 L 50.9,55.1 L 50.9,63.0 L 47.0,63.0 Z" />
+
+    <!-- Bold geometric "S" -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M 30.15,65.75 a 3.5,3.5 0 1,0 7,0 a 3.5,3.5 0 1,0 -7,0 Z" />
+        android:pathData="M 79.2,50.0 L 79.2,53.0 L 68.8,53.0 C 67.7,53.0 67.2,53.4 67.2,54.1 C 67.2,54.8 67.7,55.1 68.8,55.1 L 75.5,55.1 C 78.3,55.1 79.8,56.5 79.8,59.0 C 79.8,61.6 78.2,63.0 75.3,63.0 L 63.6,63.0 L 63.6,60.0 L 74.4,60.0 C 75.6,60.0 76.1,59.6 76.1,58.9 C 76.1,58.2 75.6,57.9 74.4,57.9 L 67.7,57.9 C 65.0,57.9 63.5,56.5 63.5,54.0 C 63.5,51.4 65.0,50.0 67.8,50.0 Z" />
+
+    <!-- Sweeping Orbit Swoosh beneath & right of DNS -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M 70.85,65.75 a 3.5,3.5 0 1,0 7,0 a 3.5,3.5 0 1,0 -7,0 Z" />
+        android:pathData="M 28.0,63.2 C 25.4,67.6 29.8,73.8 41.2,73.8 C 56.8,73.8 76.4,63.4 81.8,49.8 C 84.4,43.2 80.5,37.8 70.6,37.4 C 76.8,39.6 78.8,43.8 76.8,49.2 C 72.2,61.2 54.4,70.2 40.6,70.2 C 32.0,70.2 28.6,66.4 28.0,63.2 Z" />
 </vector>
