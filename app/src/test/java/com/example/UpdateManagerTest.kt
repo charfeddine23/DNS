@@ -277,4 +277,36 @@ class UpdateManagerTest {
         }
         Unit
     }
+
+    @Test
+    fun `trusted github url allowlist blocks cleartext http and untrusted hosts`() {
+        assertTrue(UpdateManager.isTrustedGithubUrl("https://github.com/charfeddine23/DNS/releases/latest"))
+        assertTrue(UpdateManager.isTrustedGithubUrl("https://api.github.com/repos/charfeddine23/DNS/releases"))
+        assertTrue(UpdateManager.isTrustedGithubUrl("https://objects.githubusercontent.com/github-production-release-asset/app.apk"))
+
+        assertFalse(UpdateManager.isTrustedGithubUrl("http://github.com/charfeddine23/DNS/releases/latest"))
+        assertFalse(UpdateManager.isTrustedGithubUrl("https://evil.example.com/app.apk"))
+        assertFalse(UpdateManager.isTrustedGithubUrl("https://github.com.evil.com/app.apk"))
+        assertFalse(UpdateManager.isTrustedGithubUrl("http://127.0.0.1:8080/app.apk"))
+        assertFalse(UpdateManager.isTrustedGithubUrl("file:///sdcard/Download/app.apk"))
+    }
+
+    @Test
+    fun `shizuku DoT hostname sanitizer blocks shell injection payloads`() {
+        assertEquals(
+            "dns.adguard-dns.com",
+            com.example.service.ShizukuDnsBridgeService.sanitizeDoTHostname("  dns.adguard-dns.com  ")
+        )
+        assertEquals(
+            "one.one.one.one",
+            com.example.service.ShizukuDnsBridgeService.sanitizeDoTHostname("one.one.one.one")
+        )
+
+        assertEquals(null, com.example.service.ShizukuDnsBridgeService.sanitizeDoTHostname("dns.adguard.com; rm -rf /"))
+        assertEquals(null, com.example.service.ShizukuDnsBridgeService.sanitizeDoTHostname("dns.adguard.com && id"))
+        assertEquals(null, com.example.service.ShizukuDnsBridgeService.sanitizeDoTHostname("`whoami`.evil.com"))
+        assertEquals(null, com.example.service.ShizukuDnsBridgeService.sanitizeDoTHostname("\$(id).evil.com"))
+        assertEquals(null, com.example.service.ShizukuDnsBridgeService.sanitizeDoTHostname("-invalid.com"))
+        assertEquals(null, com.example.service.ShizukuDnsBridgeService.sanitizeDoTHostname("localhost"))
+    }
 }

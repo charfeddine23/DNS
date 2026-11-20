@@ -72,6 +72,10 @@ object PrivateDnsController {
      * Direct toggle if WRITE_SECURE_SETTINGS is granted.
      * @return true if successfully changed, false if permission missing or failed.
      */
+    private val VALID_DOT_HOSTNAME_REGEX = Regex(
+        "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$"
+    )
+
     fun setPrivateDnsDirectly(context: Context, hostname: String?): Boolean {
         if (!hasWriteSecureSettingsPermission(context)) {
             return false
@@ -83,9 +87,14 @@ object PrivateDnsController {
                 Settings.Global.putString(cr, SETTING_PRIVATE_DNS_MODE, "opportunistic")
                 Settings.Global.putString(cr, SETTING_PRIVATE_DNS_SPECIFIER, "")
             } else {
+                val safeHost = hostname.trim()
+                if (safeHost.length > 253 || !VALID_DOT_HOSTNAME_REGEX.matches(safeHost)) {
+                    Log.w(TAG, "Rejected invalid Private DNS hostname")
+                    return false
+                }
                 // Strict hostname mode
                 Settings.Global.putString(cr, SETTING_PRIVATE_DNS_MODE, "hostname")
-                Settings.Global.putString(cr, SETTING_PRIVATE_DNS_SPECIFIER, hostname)
+                Settings.Global.putString(cr, SETTING_PRIVATE_DNS_SPECIFIER, safeHost)
             }
             true
         } catch (e: Exception) {

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import com.example.service.DnsVpnService
+import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -25,7 +26,9 @@ class DnsVpnServiceToggleTest {
     fun `startVpn handles START_STICKY, survives onTaskRemoved with relaunch alarm, and stopVpn shuts down cleanly`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val controller = Robolectric.buildService(DnsVpnService::class.java)
-        val service = controller.create().get()
+        val service = controller.create().get().apply {
+            tunnelDispatcher = StandardTestDispatcher()
+        }
 
         val startIntent = Intent(context, DnsVpnService::class.java).apply {
             action = DnsVpnService.ACTION_START

@@ -9,9 +9,21 @@ import com.example.data.model.DnsEngineMode
 import com.example.ui.theme.AppAppearanceMode
 import com.example.ui.theme.AppThemeStyle
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "dns_pulse_prefs")
+
+data class AllPreferences(
+    val engineMode: DnsEngineMode,
+    val autoStartBoot: Boolean,
+    val lastVpnServerId: String,
+    val glowIntensity: Boolean,
+    val themeStyle: AppThemeStyle,
+    val appearanceMode: AppAppearanceMode,
+    val simpleMode: Boolean,
+    val fullScreenMode: Boolean
+)
 
 class PreferencesManager(private val context: Context) {
 
@@ -26,25 +38,38 @@ class PreferencesManager(private val context: Context) {
         val KEY_FULL_SCREEN_MODE = booleanPreferencesKey("key_full_screen_mode")
     }
 
-    val engineModeFlow: Flow<DnsEngineMode> = context.dataStore.data.map { prefs ->
-        val raw = prefs[KEY_ENGINE_MODE] ?: DnsEngineMode.PRIVATE_DNS.name
-        try {
-            DnsEngineMode.valueOf(raw)
-        } catch (_: Exception) {
-            DnsEngineMode.PRIVATE_DNS
+    val allPreferencesFlow: Flow<AllPreferences> = context.dataStore.data
+        .map { prefs ->
+            val engineMode = try {
+                DnsEngineMode.valueOf(prefs[KEY_ENGINE_MODE] ?: DnsEngineMode.PRIVATE_DNS.name)
+            } catch (_: Exception) {
+                DnsEngineMode.PRIVATE_DNS
+            }
+            val themeStyle = try {
+                AppThemeStyle.valueOf(prefs[KEY_THEME_STYLE] ?: AppThemeStyle.CHROMATIC_FROSTED_LIQUID.name)
+            } catch (_: Exception) {
+                AppThemeStyle.CHROMATIC_FROSTED_LIQUID
+            }
+            val appearanceMode = try {
+                AppAppearanceMode.valueOf(prefs[KEY_APPEARANCE_MODE] ?: AppAppearanceMode.DARK.name)
+            } catch (_: Exception) {
+                AppAppearanceMode.DARK
+            }
+            AllPreferences(
+                engineMode = engineMode,
+                autoStartBoot = prefs[KEY_AUTO_START_BOOT] ?: false,
+                lastVpnServerId = prefs[KEY_LAST_VPN_SERVER_ID] ?: "adguard_standard",
+                glowIntensity = prefs[KEY_GLOW_INTENSITY] ?: true,
+                themeStyle = themeStyle,
+                appearanceMode = appearanceMode,
+                simpleMode = prefs[KEY_SIMPLE_MODE] ?: false,
+                fullScreenMode = prefs[KEY_FULL_SCREEN_MODE] ?: false
+            )
         }
-    }
+        .distinctUntilChanged()
 
     val autoStartBootFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_AUTO_START_BOOT] ?: false
-    }
-
-    val lastVpnServerIdFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[KEY_LAST_VPN_SERVER_ID] ?: "adguard_standard"
-    }
-
-    val glowIntensityFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[KEY_GLOW_INTENSITY] ?: true
     }
 
     val themeStyleFlow: Flow<AppThemeStyle> = context.dataStore.data.map { prefs ->
@@ -67,10 +92,6 @@ class PreferencesManager(private val context: Context) {
 
     val simpleModeFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_SIMPLE_MODE] ?: false
-    }
-
-    val fullScreenModeFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[KEY_FULL_SCREEN_MODE] ?: false
     }
 
     suspend fun setEngineMode(mode: DnsEngineMode) {

@@ -87,7 +87,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -291,11 +290,11 @@ class MainActivity : FragmentActivity() {
                 val saveableStateHolder = rememberSaveableStateHolder()
                 val currentSimpleMode by rememberUpdatedState(uiState.simpleMode)
 
-                val smoothNavEasing = remember { CubicBezierEasing(0.16f, 1.0f, 0.30f, 1.0f) }
+                val smoothNavEasing = remember { CubicBezierEasing(0.22f, 1.0f, 0.36f, 1.0f) }
                 val smoothPagePosition by animateFloatAsState(
                     targetValue = selectedTab.toFloat(),
                     animationSpec = tween(
-                        durationMillis = if (currentSimpleMode) 300 else 580,
+                        durationMillis = if (currentSimpleMode) 260 else 440,
                         easing = if (currentSimpleMode) FastOutSlowInEasing else smoothNavEasing
                     ),
                     label = "smooth_page_position"
@@ -314,44 +313,50 @@ class MainActivity : FragmentActivity() {
                     navigateToTab(0)
                 }
 
-                val triggerApkInstallFlow: (File) -> Unit = { apkFile ->
-                    when (val check = UpdateManager.verifyApkForDirectUpdate(this@MainActivity, apkFile)) {
-                        is UpdateManager.ApkCompatibilityResult.Incompatible -> {
-                            Toast.makeText(
-                                this@MainActivity,
-                                check.reason,
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                        is UpdateManager.ApkCompatibilityResult.Compatible -> {
-                            if (UpdateManager.canInstallPackages(this@MainActivity)) {
-                                val launched = UpdateManager.triggerApkInstall(this@MainActivity, apkFile)
-                                if (!launched) {
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        "Unable to launch package installer.",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            } else {
-                                pendingApkInstall = apkFile
+                val onRequestVpnStartStable: (Intent?) -> Unit = remember {
+                    { prepareIntent -> startVpnWithPermissionCheck(prepareIntent) }
+                }
+
+                val triggerApkInstallFlow: (File) -> Unit = remember {
+                    { apkFile ->
+                        when (val check = UpdateManager.verifyApkForDirectUpdate(this@MainActivity, apkFile)) {
+                            is UpdateManager.ApkCompatibilityResult.Incompatible -> {
                                 Toast.makeText(
                                     this@MainActivity,
-                                    "Please allow \"Install unknown apps\" for Vortex Dns to update.",
+                                    check.reason,
                                     Toast.LENGTH_LONG
                                 ).show()
-                                try {
-                                    @Suppress("DEPRECATION")
-                                    startActivityForResult(
-                                        UpdateManager.buildManageUnknownSourcesIntent(this@MainActivity),
-                                        INSTALL_APPS_REQUEST_CODE
-                                    )
-                                } catch (e: Exception) {
+                            }
+                            is UpdateManager.ApkCompatibilityResult.Compatible -> {
+                                if (UpdateManager.canInstallPackages(this@MainActivity)) {
+                                    val launched = UpdateManager.triggerApkInstall(this@MainActivity, apkFile)
+                                    if (!launched) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Unable to launch package installer.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                } else {
+                                    pendingApkInstall = apkFile
                                     Toast.makeText(
                                         this@MainActivity,
-                                        "Unable to open install settings: ${e.localizedMessage}",
+                                        "Please allow \"Install unknown apps\" for Vortex Dns to update.",
                                         Toast.LENGTH_LONG
                                     ).show()
+                                    try {
+                                        @Suppress("DEPRECATION")
+                                        startActivityForResult(
+                                            UpdateManager.buildManageUnknownSourcesIntent(this@MainActivity),
+                                            INSTALL_APPS_REQUEST_CODE
+                                        )
+                                    } catch (e: Exception) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Unable to open install settings: ${e.localizedMessage}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
                                 }
                             }
                         }
@@ -463,39 +468,37 @@ class MainActivity : FragmentActivity() {
                                         end = innerPadding.calculateEndPadding(LayoutDirection.Ltr)
                                     )
                             ) {
-                                // Overlap-free, GPU-composited directional Fade-Through transition
-                                // Direct target transition skips intermediate tabs (no cross-tab flashing or gesture conflicts)
+                                // Hardware-accelerated directional cross-dissolve synchronized with floating dock glide
                                 AnimatedContent(
                                     targetState = selectedTab,
                                     transitionSpec = {
                                         val direction = if (targetState > initialState) 1 else -1
                                         val spec = if (currentSimpleMode) {
-                                            (fadeIn(
+                                            fadeIn(
                                                 animationSpec = tween(
-                                                    durationMillis = 300,
-                                                    delayMillis = 110,
+                                                    durationMillis = 220,
+                                                    delayMillis = 30,
                                                     easing = LinearOutSlowInEasing
                                                 )
-                                            )) togetherWith fadeOut(
+                                            ) togetherWith fadeOut(
                                                 animationSpec = tween(
-                                                    durationMillis = 140,
+                                                    durationMillis = 130,
                                                     easing = FastOutLinearInEasing
                                                 )
                                             )
                                         } else {
                                             val enter = fadeIn(
                                                 animationSpec = tween(
-                                                    durationMillis = 440,
-                                                    delayMillis = 160,
+                                                    durationMillis = 340,
+                                                    delayMillis = 45,
                                                     easing = LinearOutSlowInEasing
                                                 )
                                             ) + slideInHorizontally(
                                                 animationSpec = tween(
-                                                    durationMillis = 560,
-                                                    delayMillis = 110,
+                                                    durationMillis = 440,
                                                     easing = smoothNavEasing
                                                 )
-                                            ) { fullWidth -> direction * (fullWidth / 8) }
+                                            ) { fullWidth -> direction * (fullWidth / 10) }
 
                                             val exit = fadeOut(
                                                 animationSpec = tween(
@@ -504,14 +507,14 @@ class MainActivity : FragmentActivity() {
                                                 )
                                             ) + slideOutHorizontally(
                                                 animationSpec = tween(
-                                                    durationMillis = 260,
+                                                    durationMillis = 240,
                                                     easing = FastOutLinearInEasing
                                                 )
-                                            ) { fullWidth -> -direction * (fullWidth / 12) }
+                                            ) { fullWidth -> -direction * (fullWidth / 14) }
 
                                             enter togetherWith exit
                                         }
-                                        spec using SizeTransform(clip = true)
+                                        spec using SizeTransform(clip = false)
                                     },
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -523,14 +526,7 @@ class MainActivity : FragmentActivity() {
                                         LocalLayoutDirection provides originalLayoutDirection,
                                         LocalPageActive provides isCurrentTarget
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .clipToBounds()
-                                                .graphicsLayer {
-                                                    compositingStrategy = CompositingStrategy.Offscreen
-                                                }
-                                        ) {
+                                        Box(modifier = Modifier.fillMaxSize()) {
                                             saveableStateHolder.SaveableStateProvider(key = page) {
                                                 when (page) {
                                                     0 -> HomeScreen(
@@ -538,7 +534,7 @@ class MainActivity : FragmentActivity() {
                                                         viewModel = viewModel,
                                                         onFallbackRequired = onFallbackRequiredStable,
                                                         onLaunchWirelessSettings = onLaunchWirelessSettingsStable,
-                                                        onRequestVpnStart = ::startVpnWithPermissionCheck
+                                                        onRequestVpnStart = onRequestVpnStartStable
                                                     )
                                                     1 -> AnalyticsScreen(
                                                         uiState = uiState,
@@ -690,34 +686,60 @@ private fun FloatingPulseNavBar(
                     )
             )
 
+            val tabNavEasing = remember { CubicBezierEasing(0.22f, 1.0f, 0.36f, 1.0f) }
+            val tabShape = remember { RoundedCornerShape(23.dp) }
             Row(
                 modifier = Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 tabs.forEach { tab ->
                     val isSelected = currentPage == tab.index
+                    val interactionSource = remember(tab.index) { MutableInteractionSource() }
+                    val onTabClick = remember(tab.index, onSelectPage) {
+                        { onSelectPage(tab.index) }
+                    }
                     val iconScaleState = if (simpleMode) {
                         remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
                     } else {
                         animateFloatAsState(
                             targetValue = if (isSelected) 1.12f else 1f,
                             animationSpec = tween(
-                                durationMillis = 480,
-                                easing = CubicBezierEasing(0.16f, 1.0f, 0.30f, 1.0f)
+                                durationMillis = 360,
+                                easing = tabNavEasing
                             ),
                             label = "tab_icon_scale_${tab.index}"
                         )
+                    }
+                    val iconTint = if (simpleMode) {
+                        if (isSelected) animatedAccent else TextSecondary
+                    } else {
+                        val animatedTint by animateColorAsState(
+                            targetValue = if (isSelected) animatedAccent else TextSecondary,
+                            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                            label = "tab_tint_${tab.index}"
+                        )
+                        animatedTint
+                    }
+                    val labelColor = if (simpleMode) {
+                        if (isSelected) TextPrimary else TextSecondary
+                    } else {
+                        val animatedLabel by animateColorAsState(
+                            targetValue = if (isSelected) TextPrimary else TextSecondary,
+                            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                            label = "tab_label_${tab.index}"
+                        )
+                        animatedLabel
                     }
 
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clip(RoundedCornerShape(23.dp))
+                            .clip(tabShape)
                             .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
+                                interactionSource = interactionSource,
                                 indication = ripple(bounded = true, color = animatedAccent),
-                                onClick = { onSelectPage(tab.index) }
+                                onClick = onTabClick
                             )
                             .testTag(tab.testTag),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -726,7 +748,7 @@ private fun FloatingPulseNavBar(
                         Icon(
                             imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                             contentDescription = tab.contentDesc,
-                            tint = if (isSelected) animatedAccent else TextSecondary,
+                            tint = iconTint,
                             modifier = Modifier
                                 .size(21.dp)
                                 .graphicsLayer {
@@ -738,7 +760,7 @@ private fun FloatingPulseNavBar(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = tab.label,
-                            color = if (isSelected) TextPrimary else TextSecondary,
+                            color = labelColor,
                             fontSize = 9.sp,
                             letterSpacing = (-0.2).sp,
                             maxLines = 1,

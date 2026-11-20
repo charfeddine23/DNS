@@ -3,6 +3,7 @@ package com.example.service
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -100,8 +101,13 @@ class AppLockActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         readExtras(intent)
+        if (targetPackageState.isBlank()) {
+            finishWithoutFlicker()
+            return
+        }
         promptRequestId++
 
         setContent {
@@ -134,7 +140,9 @@ class AppLockActivity : FragmentActivity() {
                     onSuccess = {
                         isAuthenticatingWithBiometric = false
                         isExplicitlyFinishing = true
-                        authRepo.markAppUnlocked(currentPkg)
+                        if (currentPkg.isNotBlank()) {
+                            authRepo.markAppUnlocked(currentPkg)
+                        }
                         finishWithoutFlicker()
                     },
                     onErrorOrCancelled = { msg ->
@@ -245,7 +253,7 @@ class AppLockActivity : FragmentActivity() {
             addCategory(Intent.CATEGORY_HOME)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
-        startActivity(homeIntent)
+        runCatching { startActivity(homeIntent) }
         finishWithoutFlicker()
     }
 

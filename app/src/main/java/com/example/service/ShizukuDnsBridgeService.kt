@@ -33,6 +33,16 @@ class ShizukuDnsBridgeService private constructor(private val context: Context) 
 
     companion object {
         private const val TAG = "ShizukuDnsBridge"
+        private val VALID_DOT_HOSTNAME_REGEX = Regex(
+            "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$"
+        )
+        private val VALID_ANDROID_PACKAGE_REGEX = Regex("^[a-zA-Z0-9._]{1,128}$")
+
+        internal fun sanitizeDoTHostname(raw: String?): String? {
+            val trimmed = raw?.trim().orEmpty()
+            if (trimmed.isEmpty() || trimmed.length > 253) return null
+            return trimmed.takeIf { VALID_DOT_HOSTNAME_REGEX.matches(it) }
+        }
 
         @Volatile
         private var instance: ShizukuDnsBridgeService? = null
@@ -113,15 +123,22 @@ class ShizukuDnsBridgeService private constructor(private val context: Context) 
             // Opportunistic / Auto
             "settings put global private_dns_mode opportunistic && settings put global private_dns_specifier \"\""
         } else {
-            // Strict hostname mode
-            "settings put global private_dns_mode hostname && settings put global private_dns_specifier $hostname"
+            val safeHostname = sanitizeDoTHostname(hostname)
+                ?: return@withContext ShizukuDnsResult(
+                    success = false,
+                    output = "",
+                    error = "Invalid Private DNS hostname format."
+                )
+            // Strict hostname mode using validated RFC-1123 hostname
+            "settings put global private_dns_mode hostname && settings put global private_dns_specifier '$safeHostname'"
         }
 
         val result = executePrivilegedCommand(commands)
 
         // Also ensure WRITE_SECURE_SETTINGS is permanently granted to app for seamless zero-latency in-process edits
-        if (result.success) {
-            executePrivilegedCommand("pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS")
+        val safePackage = context.packageName.takeIf { VALID_ANDROID_PACKAGE_REGEX.matches(it) }
+        if (result.success && safePackage != null) {
+            executePrivilegedCommand("pm grant $safePackage android.permission.WRITE_SECURE_SETTINGS")
         }
 
         result

@@ -22,6 +22,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
 class DnsAnalyticsRepository private constructor(
     context: Context
@@ -53,6 +54,7 @@ class DnsAnalyticsRepository private constructor(
     private var lastSnapshotEmitAtMs: Long = 0L
     @Volatile
     private var lastReferenceTimeMs: Long = 0L
+    private val nextEventId = AtomicLong(1L)
     private val hourFormatter = SimpleDateFormat("HH", Locale.US)
 
     private val _analyticsFlow = MutableStateFlow(DnsAnalyticsSnapshot())
@@ -148,7 +150,8 @@ class DnsAnalyticsRepository private constructor(
                         category = analysis.category,
                         wasBlocked = analysis.isBlocked,
                         latencyMs = latencyMs.coerceAtLeast(0L),
-                        timestampMs = timestampMs
+                        timestampMs = timestampMs,
+                        id = nextEventId.getAndIncrement()
                     )
                 )
                 while (recentEvents.size > MAX_RECENT_EVENTS) {
@@ -423,7 +426,8 @@ class DnsAnalyticsRepository private constructor(
                                 category = cat,
                                 wasBlocked = obj.optBoolean("blocked", false),
                                 latencyMs = obj.optLong("latency", 0L),
-                                timestampMs = obj.optLong("ts", 0L)
+                                timestampMs = obj.optLong("ts", 0L),
+                                id = nextEventId.getAndIncrement()
                             )
                         )
                     }
@@ -440,8 +444,8 @@ class DnsAnalyticsRepository private constructor(
         private const val PREFS_NAME = "dns_pulse_analytics"
         private const val KEY_ANALYTICS_JSON = "analytics_snapshot_json"
         private const val MILLIS_PER_HOUR = 3_600_000L
-        private const val PERSIST_DEBOUNCE_MS = 1_200L
-        private const val SNAPSHOT_EMIT_THROTTLE_MS = 280L
+        private const val PERSIST_DEBOUNCE_MS = 1_500L
+        private const val SNAPSHOT_EMIT_THROTTLE_MS = 420L
         private const val MAX_TRACKED_DOMAINS = 64
         private const val MAX_RECENT_EVENTS = 12
         private const val ESTIMATED_KB_PER_BLOCKED_AD = 38L

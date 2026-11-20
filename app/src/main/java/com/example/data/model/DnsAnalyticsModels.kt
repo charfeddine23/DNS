@@ -26,7 +26,8 @@ data class RecentDnsEvent(
     val category: DnsTrafficCategory,
     val wasBlocked: Boolean,
     val latencyMs: Long,
-    val timestampMs: Long
+    val timestampMs: Long,
+    val id: Long = 0L
 )
 
 @Immutable

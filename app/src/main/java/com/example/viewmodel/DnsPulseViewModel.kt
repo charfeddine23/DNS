@@ -81,6 +81,7 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+    val analyticsState: StateFlow<DnsAnalyticsSnapshot> = analyticsRepository.analyticsFlow
 
     private var updateCheckJob: Job? = null
     private var apkDownloadJob: Job? = null
@@ -92,18 +93,12 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         refreshAuthenticatorEnvironment()
         observeVpnService()
         observeShizukuStatus()
-        observeAnalytics()
         observeAuthenticatorConfig()
         loadPreferences()
         loadInstalledApps()
-        pingAllServers()
-    }
-
-    private fun observeAnalytics() {
-        viewModelScope.launch {
-            analyticsRepository.analyticsFlow.collect { snapshot ->
-                _uiState.update { it.copy(analytics = snapshot) }
-            }
+        viewModelScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(150L)
+            pingAllServers()
         }
     }
 
@@ -171,43 +166,19 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
 
     private fun loadPreferences() {
         viewModelScope.launch {
-            prefs.engineModeFlow.collect { mode ->
-                _uiState.update { it.copy(engineMode = mode) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.lastVpnServerIdFlow.collect { id ->
-                _uiState.update { it.copy(selectedVpnServerId = id) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.autoStartBootFlow.collect { enabled ->
-                _uiState.update { it.copy(autoStartBoot = enabled) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.glowIntensityFlow.collect { enabled ->
-                _uiState.update { it.copy(ambientGlow = enabled) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.themeStyleFlow.collect { style ->
-                _uiState.update { it.copy(themeStyle = style) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.appearanceModeFlow.collect { mode ->
-                _uiState.update { it.copy(appearanceMode = mode) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.simpleModeFlow.collect { enabled ->
-                _uiState.update { it.copy(simpleMode = enabled) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.fullScreenModeFlow.collect { enabled ->
-                _uiState.update { it.copy(fullScreenMode = enabled) }
+            prefs.allPreferencesFlow.collect { allPrefs ->
+                _uiState.update { state ->
+                    state.copy(
+                        engineMode = allPrefs.engineMode,
+                        selectedVpnServerId = allPrefs.lastVpnServerId,
+                        autoStartBoot = allPrefs.autoStartBoot,
+                        ambientGlow = allPrefs.glowIntensity,
+                        themeStyle = allPrefs.themeStyle,
+                        appearanceMode = allPrefs.appearanceMode,
+                        simpleMode = allPrefs.simpleMode,
+                        fullScreenMode = allPrefs.fullScreenMode
+                    )
+                }
             }
         }
     }

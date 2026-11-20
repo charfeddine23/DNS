@@ -15,16 +15,20 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -63,7 +67,7 @@ fun GlassCard(
         activePalette
     }
     val isDark = palette.isDark
-    val shape = RoundedCornerShape(cornerRadius)
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
 
     val effectiveBackground = if (overrideThemeStyle != null) palette.glassSurface else backgroundColor
     val effectiveBorderColor = if (overrideThemeStyle != null && borderColor == activePalette.glassBorder) {
@@ -325,43 +329,67 @@ fun GlassCard(
                         }
                     )
                 )
-                .drawWithContent {
-                    drawContent()
-                    if (!isStackCard) {
-                        val step = 18.dp.toPx()
-                        var x = 8f
-                        var idx = 0
-                        val grainTint = if (isDark) Color.White else primaryAccent
-                        while (x < size.width) {
-                            var y = 8f
-                            while (y < size.height) {
-                                val jitter = ((idx * 37) % 11) / 11f
-                                if (idx % 3 == 0) {
-                                    drawCircle(
-                                        color = grainTint.copy(alpha = 0.032f + jitter * 0.022f),
-                                        radius = 0.9.dp.toPx(),
-                                        center = Offset(x + jitter * 6f, y + jitter * 6f)
-                                    )
-                                }
-                                idx++
-                                y += step
-                            }
-                            x += step
-                        }
-                    }
+                .drawWithCache {
                     val cr = cornerRadius.toPx()
                     val inset = 1.dp.toPx()
                     val innerCr = (cr - inset).coerceAtLeast(0f)
-                    drawRoundRect(
-                        color = if (isDark) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.65f),
-                        topLeft = Offset(inset, inset),
-                        size = Size(
-                            (size.width - inset * 2f).coerceAtLeast(1f),
-                            (size.height - inset * 2f).coerceAtLeast(1f)
-                        ),
-                        cornerRadius = CornerRadius(innerCr, innerCr),
-                        style = Stroke(width = 0.9.dp.toPx())
+                    val innerTopLeft = Offset(inset, inset)
+                    val innerSize = Size(
+                        (size.width - inset * 2f).coerceAtLeast(1f),
+                        (size.height - inset * 2f).coerceAtLeast(1f)
                     )
+                    val innerRadius = CornerRadius(innerCr, innerCr)
+                    val innerStroke = Stroke(width = 0.9.dp.toPx())
+                    val innerColor = if (isDark) {
+                        Color.White.copy(alpha = 0.08f)
+                    } else {
+                        Color.White.copy(alpha = 0.65f)
+                    }
+                    val grainColor = (if (isDark) Color.White else primaryAccent).copy(alpha = 0.042f)
+                    val grainPath = if (!isStackCard) {
+                        Path().apply {
+                            val step = 18.dp.toPx()
+                            val dotRadius = 0.9.dp.toPx()
+                            var x = 8f
+                            var idx = 0
+                            while (x < size.width) {
+                                var y = 8f
+                                while (y < size.height) {
+                                    if (idx % 3 == 0) {
+                                        val jitter = ((idx * 37) % 11) / 11f
+                                        val cx = x + jitter * 6f
+                                        val cy = y + jitter * 6f
+                                        addOval(
+                                            Rect(
+                                                left = cx - dotRadius,
+                                                top = cy - dotRadius,
+                                                right = cx + dotRadius,
+                                                bottom = cy + dotRadius
+                                            )
+                                        )
+                                    }
+                                    idx++
+                                    y += step
+                                }
+                                x += step
+                            }
+                        }
+                    } else {
+                        null
+                    }
+                    onDrawWithContent {
+                        drawContent()
+                        if (grainPath != null) {
+                            drawPath(path = grainPath, color = grainColor)
+                        }
+                        drawRoundRect(
+                            color = innerColor,
+                            topLeft = innerTopLeft,
+                            size = innerSize,
+                            cornerRadius = innerRadius,
+                            style = innerStroke
+                        )
+                    }
                 }
                 .border(
                     width = borderWidth,

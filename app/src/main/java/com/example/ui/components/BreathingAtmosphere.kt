@@ -145,53 +145,6 @@ fun BreathingAtmosphere(
         label = "aurora_secondary"
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "living_atmosphere")
-
-    val breathPhaseState = infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2f * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 6800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "breath_phase"
-    )
-
-    val driftPhaseState = infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2f * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 11500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "drift_phase"
-    )
-
-    val particleFlowState = infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (isProtected) 9000 else 15000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "particle_flow"
-    )
-
-    val particles = remember {
-        listOf(
-            SignalParticle(0.12f, 0.15f, 1.0f, 1.8f, 0.35f),
-            SignalParticle(0.28f, 0.72f, 1.3f, 1.2f, 0.25f),
-            SignalParticle(0.41f, 0.42f, 0.8f, 2.1f, 0.30f),
-            SignalParticle(0.58f, 0.85f, 1.1f, 1.5f, 0.28f),
-            SignalParticle(0.73f, 0.24f, 1.4f, 1.9f, 0.38f),
-            SignalParticle(0.86f, 0.61f, 0.9f, 1.3f, 0.24f),
-            SignalParticle(0.21f, 0.54f, 1.2f, 1.4f, 0.22f),
-            SignalParticle(0.67f, 0.11f, 0.95f, 1.7f, 0.32f),
-            SignalParticle(0.91f, 0.39f, 1.15f, 1.5f, 0.26f),
-            SignalParticle(0.49f, 0.67f, 1.35f, 1.1f, 0.20f)
-        )
-    }
-
     val useBlurredBackdrop = themeStyle == AppThemeStyle.CHROMATIC_FROSTED_LIQUID ||
         themeStyle == AppThemeStyle.FROSTED_GLASSMORPHISM ||
         themeStyle == AppThemeStyle.CATPPUCCIN_MOCHA
@@ -204,87 +157,16 @@ fun BreathingAtmosphere(
                 drawRect(color = baseBgColorState.value)
             }
     ) {
-        // Layer 1: Optical Aurora & Soft Multi-Stop Bokeh Backdrop (drawn without recomposition)
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            if (!ambientGlowEnabled) return@Canvas
-            val w = size.width
-            val h = size.height
-            val breathPhase = breathPhaseState.value
-            val driftPhase = driftPhaseState.value
-            val primaryColor = primaryColorState.value
-            val secondaryColor = secondaryColorState.value
-            val pageOffsetFraction = pageOffsetFractionProvider()
-
-            val breathScale = 1f + 0.14f * sin(breathPhase)
-            val parallaxShiftX = (pageOffsetFraction - 1f) * w * 0.12f
-
-            val baseBoost = when (themeStyle) {
-                AppThemeStyle.NEUMORPHISM -> 0.28f
-                AppThemeStyle.NORD -> 0.65f
-                AppThemeStyle.CATPPUCCIN_MOCHA -> 0.85f
-                AppThemeStyle.GLASS_PSD_MOCKUP -> 1.15f
-                AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> 1.22f
-                AppThemeStyle.SYNTHWAVE_84 -> 1.25f
-                AppThemeStyle.DRACULA_PRO -> 1.12f
-                AppThemeStyle.TOKYO_NIGHT -> 1.08f
-                else -> 1.0f
-            }
-            val modeAttenuation = if (isDark) 1.0f else 0.72f
-            val intensityBoost = baseBoost * modeAttenuation
-            val frostedSpread = if (useBlurredBackdrop) 1.18f else 1.0f
-
-            val orb1Center = Offset(
-                x = w * 0.5f + cos(driftPhase) * w * 0.10f - parallaxShiftX,
-                y = h * 0.26f + sin(breathPhase) * h * 0.03f
-            )
-            val orb1Radius = w * 0.90f * breathScale * frostedSpread
-            drawCircle(
-                brush = Brush.radialGradient(
-                    0.0f to primaryColor.copy(alpha = ((if (isProtected) 0.26f else 0.16f) * intensityBoost).coerceAtMost(0.45f)),
-                    0.45f to primaryColor.copy(alpha = ((if (isProtected) 0.11f else 0.06f) * intensityBoost).coerceAtMost(0.26f)),
-                    0.78f to primaryColor.copy(alpha = ((if (isProtected) 0.035f else 0.015f) * intensityBoost).coerceAtMost(0.10f)),
-                    1.0f to Color.Transparent,
-                    center = orb1Center,
-                    radius = orb1Radius
-                ),
-                radius = orb1Radius,
-                center = orb1Center
-            )
-
-            val orb2Scale = 1f + 0.12f * cos(breathPhase + 1.1f)
-            val orb2Center = Offset(
-                x = w * 0.22f + sin(driftPhase * 0.8f) * w * 0.14f + parallaxShiftX * 0.7f,
-                y = h * 0.76f + cos(driftPhase) * h * 0.05f
-            )
-            val orb2Radius = w * 0.78f * orb2Scale * frostedSpread
-            drawCircle(
-                brush = Brush.radialGradient(
-                    0.0f to secondaryColor.copy(alpha = ((if (isProtected) 0.18f else 0.10f) * intensityBoost).coerceAtMost(0.35f)),
-                    0.55f to secondaryColor.copy(alpha = ((if (isProtected) 0.06f else 0.03f) * intensityBoost).coerceAtMost(0.14f)),
-                    1.0f to Color.Transparent,
-                    center = orb2Center,
-                    radius = orb2Radius
-                ),
-                radius = orb2Radius,
-                center = orb2Center
-            )
-
-            val orb3Center = Offset(
-                x = w * 0.88f - cos(driftPhase) * w * 0.08f - parallaxShiftX * 0.5f,
-                y = h * 0.54f + sin(breathPhase * 0.7f) * h * 0.06f
-            )
-            val orb3Radius = w * 0.55f
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        primaryColor.copy(alpha = ((if (isProtected) 0.13f else 0.06f) * intensityBoost).coerceAtMost(0.3f)),
-                        Color.Transparent
-                    ),
-                    center = orb3Center,
-                    radius = orb3Radius
-                ),
-                radius = orb3Radius,
-                center = orb3Center
+        // Layer 1 & 2b: Optical Aurora + Luminous Signal Particles (suspended cleanly when glow disabled)
+        if (ambientGlowEnabled) {
+            BreathingAuroraAndParticlesLayer(
+                themeStyle = themeStyle,
+                isDark = isDark,
+                isProtected = isProtected,
+                useBlurredBackdrop = useBlurredBackdrop,
+                primaryColorProvider = { primaryColorState.value },
+                secondaryColorProvider = { secondaryColorState.value },
+                pageOffsetFractionProvider = pageOffsetFractionProvider
             )
         }
 
@@ -326,32 +208,165 @@ fun BreathingAtmosphere(
                     }
             )
         }
+    }
+}
 
-        // Layer 2b: Luminous Signal Particles
-        if (themeStyle != AppThemeStyle.NEUMORPHISM || isProtected) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                val breathPhase = breathPhaseState.value
-                val driftPhase = driftPhaseState.value
-                val particleFlow = particleFlowState.value
-                val primaryColor = primaryColorState.value
-                val parallaxShiftX = (pageOffsetFractionProvider() - 1f) * w * 0.12f
-                val swayAmplitude = 14.dp.toPx()
-                val protAlphaMult = if (isProtected) 0.9f else 0.45f
+@Composable
+private fun BreathingAuroraAndParticlesLayer(
+    themeStyle: AppThemeStyle,
+    isDark: Boolean,
+    isProtected: Boolean,
+    useBlurredBackdrop: Boolean,
+    primaryColorProvider: () -> Color,
+    secondaryColorProvider: () -> Color,
+    pageOffsetFractionProvider: () -> Float
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "living_atmosphere")
 
-                particles.forEach { p ->
-                    val yNorm = ((p.yOffset - particleFlow * p.speedFactor) % 1f + 1f) % 1f
-                    val swayX = sin(driftPhase + p.xFraction * 8f) * swayAmplitude
-                    val px = (p.xFraction * w + swayX - parallaxShiftX * 0.35f).coerceIn(0f, w)
-                    val py = yNorm * h
-                    val pulseFactor = 0.65f + 0.35f * sin(breathPhase + p.yOffset * 6f)
-                    drawCircle(
-                        color = primaryColor.copy(alpha = p.alpha * pulseFactor * protAlphaMult),
-                        radius = p.radiusDp.dp.toPx(),
-                        center = Offset(px, py)
-                    )
-                }
+    val breathPhaseState = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2f * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 6800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "breath_phase"
+    )
+
+    val driftPhaseState = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2f * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 11500, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "drift_phase"
+    )
+
+    val particleFlowState = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (isProtected) 9000 else 15000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "particle_flow"
+    )
+
+    val particles = remember {
+        arrayOf(
+            SignalParticle(0.12f, 0.15f, 1.0f, 1.8f, 0.35f),
+            SignalParticle(0.28f, 0.72f, 1.3f, 1.2f, 0.25f),
+            SignalParticle(0.41f, 0.42f, 0.8f, 2.1f, 0.30f),
+            SignalParticle(0.58f, 0.85f, 1.1f, 1.5f, 0.28f),
+            SignalParticle(0.73f, 0.24f, 1.4f, 1.9f, 0.38f),
+            SignalParticle(0.86f, 0.61f, 0.9f, 1.3f, 0.24f),
+            SignalParticle(0.21f, 0.54f, 1.2f, 1.4f, 0.22f),
+            SignalParticle(0.67f, 0.11f, 0.95f, 1.7f, 0.32f),
+            SignalParticle(0.91f, 0.39f, 1.15f, 1.5f, 0.26f),
+            SignalParticle(0.49f, 0.67f, 1.35f, 1.1f, 0.20f)
+        )
+    }
+
+    val baseBoost = when (themeStyle) {
+        AppThemeStyle.NEUMORPHISM -> 0.28f
+        AppThemeStyle.NORD -> 0.65f
+        AppThemeStyle.CATPPUCCIN_MOCHA -> 0.85f
+        AppThemeStyle.GLASS_PSD_MOCKUP -> 1.15f
+        AppThemeStyle.HOLOGRAPHIC_LIQUID_GLASS -> 1.22f
+        AppThemeStyle.SYNTHWAVE_84 -> 1.25f
+        AppThemeStyle.DRACULA_PRO -> 1.12f
+        AppThemeStyle.TOKYO_NIGHT -> 1.08f
+        else -> 1.0f
+    }
+    val modeAttenuation = if (isDark) 1.0f else 0.72f
+    val intensityBoost = baseBoost * modeAttenuation
+    val frostedSpread = if (useBlurredBackdrop) 1.18f else 1.0f
+    val showParticles = themeStyle != AppThemeStyle.NEUMORPHISM || isProtected
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        val breathPhase = breathPhaseState.value
+        val driftPhase = driftPhaseState.value
+        val primaryColor = primaryColorProvider()
+        val secondaryColor = secondaryColorProvider()
+        val pageOffsetFraction = pageOffsetFractionProvider()
+
+        val breathScale = 1f + 0.14f * sin(breathPhase)
+        val parallaxShiftX = (pageOffsetFraction - 1f) * w * 0.12f
+
+        val orb1Center = Offset(
+            x = w * 0.5f + cos(driftPhase) * w * 0.10f - parallaxShiftX,
+            y = h * 0.26f + sin(breathPhase) * h * 0.03f
+        )
+        val orb1Radius = w * 0.90f * breathScale * frostedSpread
+        drawCircle(
+            brush = Brush.radialGradient(
+                0.0f to primaryColor.copy(alpha = ((if (isProtected) 0.26f else 0.16f) * intensityBoost).coerceAtMost(0.45f)),
+                0.45f to primaryColor.copy(alpha = ((if (isProtected) 0.11f else 0.06f) * intensityBoost).coerceAtMost(0.26f)),
+                0.78f to primaryColor.copy(alpha = ((if (isProtected) 0.035f else 0.015f) * intensityBoost).coerceAtMost(0.10f)),
+                1.0f to Color.Transparent,
+                center = orb1Center,
+                radius = orb1Radius
+            ),
+            radius = orb1Radius,
+            center = orb1Center
+        )
+
+        val orb2Scale = 1f + 0.12f * cos(breathPhase + 1.1f)
+        val orb2Center = Offset(
+            x = w * 0.22f + sin(driftPhase * 0.8f) * w * 0.14f + parallaxShiftX * 0.7f,
+            y = h * 0.76f + cos(driftPhase) * h * 0.05f
+        )
+        val orb2Radius = w * 0.78f * orb2Scale * frostedSpread
+        drawCircle(
+            brush = Brush.radialGradient(
+                0.0f to secondaryColor.copy(alpha = ((if (isProtected) 0.18f else 0.10f) * intensityBoost).coerceAtMost(0.35f)),
+                0.55f to secondaryColor.copy(alpha = ((if (isProtected) 0.06f else 0.03f) * intensityBoost).coerceAtMost(0.14f)),
+                1.0f to Color.Transparent,
+                center = orb2Center,
+                radius = orb2Radius
+            ),
+            radius = orb2Radius,
+            center = orb2Center
+        )
+
+        val orb3Center = Offset(
+            x = w * 0.88f - cos(driftPhase) * w * 0.08f - parallaxShiftX * 0.5f,
+            y = h * 0.54f + sin(breathPhase * 0.7f) * h * 0.06f
+        )
+        val orb3Radius = w * 0.55f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    primaryColor.copy(alpha = ((if (isProtected) 0.13f else 0.06f) * intensityBoost).coerceAtMost(0.3f)),
+                    Color.Transparent
+                ),
+                center = orb3Center,
+                radius = orb3Radius
+            ),
+            radius = orb3Radius,
+            center = orb3Center
+        )
+
+        if (showParticles) {
+            val particleFlow = particleFlowState.value
+            val swayAmplitude = 14.dp.toPx()
+            val protAlphaMult = if (isProtected) 0.9f else 0.45f
+            val densityScale = density
+            for (i in particles.indices) {
+                val p = particles[i]
+                val yNorm = ((p.yOffset - particleFlow * p.speedFactor) % 1f + 1f) % 1f
+                val swayX = sin(driftPhase + p.xFraction * 8f) * swayAmplitude
+                val px = (p.xFraction * w + swayX - parallaxShiftX * 0.35f).coerceIn(0f, w)
+                val py = yNorm * h
+                val pulseFactor = 0.65f + 0.35f * sin(breathPhase + p.yOffset * 6f)
+                drawCircle(
+                    color = primaryColor.copy(alpha = p.alpha * pulseFactor * protAlphaMult),
+                    radius = p.radiusDp * densityScale,
+                    center = Offset(px, py)
+                )
             }
         }
     }

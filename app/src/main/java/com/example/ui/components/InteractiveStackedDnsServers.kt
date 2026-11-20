@@ -64,6 +64,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -142,8 +143,9 @@ fun InteractiveStackedDnsServers(
     fun readDeckPhase(): Float = if (isDraggingDirect) directDragPosition else deckPosition.value
 
     // Sync orderedIds only when the set of server IDs changes
-    LaunchedEffect(servers.map { it.id }) {
-        val validIds = servers.map { it.id }
+    val serverIds = remember(servers) { servers.map { it.id } }
+    LaunchedEffect(serverIds) {
+        val validIds = serverIds
         if (orderedIds.isEmpty() || orderedIds.toSet() != validIds.toSet()) {
             orderedIds.clear()
             val selectedFirst = validIds.filter { it == selectedServerId }
@@ -493,36 +495,19 @@ fun InteractiveStackedDnsServers(
                                 layout(placeable.width, placeable.height) {
                                     val pos = readDeckPhase()
                                     val phase = (((index - pos) % deckCount) + deckCount) % deckCount
-                                    val pose = computeRealisticDeckPose(
+                                    placeDeckCardWithPose(
+                                        placeable = placeable,
                                         phase = phase,
                                         deckCount = deckCount,
                                         maxVisibleDepth = maxVisibleDepth,
                                         stepOffsetPx = cardStepOffsetPx,
                                         peelDropPx = peelDropPx,
-                                        densityScale = density.density
+                                        densityScale = density.density,
+                                        stackCardShape = stackCardShape,
+                                        isDarkTheme = isDarkTheme,
+                                        isTopFocused = isTopFocused,
+                                        topShadowGlow = topShadowGlow
                                     )
-                                    placeable.placeWithLayer(0, 0, zIndex = pose.zOrder) {
-                                        translationY = pose.translationY
-                                        scaleX = pose.scale
-                                        scaleY = pose.scale
-                                        alpha = pose.alpha
-                                        rotationX = pose.rotationX
-                                        shape = stackCardShape
-                                        clip = true
-                                        transformOrigin = TransformOrigin(0.5f, 0.28f)
-                                        cameraDistance = 22f * density.density
-                                        shadowElevation = if (isDarkTheme) pose.shadowElevationPx else pose.shadowElevationPx * 0.65f
-                                        ambientShadowColor = if (isTopFocused) {
-                                            topShadowGlow.copy(alpha = if (isDarkTheme) 0.45f else 0.28f)
-                                        } else {
-                                            Color.Black.copy(alpha = if (isDarkTheme) 0.55f else 0.18f)
-                                        }
-                                        spotShadowColor = if (isTopFocused) {
-                                            topShadowGlow.copy(alpha = if (isDarkTheme) 0.55f else 0.34f)
-                                        } else {
-                                            Color.Black.copy(alpha = if (isDarkTheme) 0.65f else 0.22f)
-                                        }
-                                    }
                                 }
                             }
                     )
@@ -532,109 +517,115 @@ fun InteractiveStackedDnsServers(
     }
 }
 
-private data class DeckCardPose(
-    val translationY: Float,
-    val scale: Float,
-    val alpha: Float,
-    val rotationX: Float,
-    val zOrder: Float,
-    val shadowElevationPx: Float
-)
-
 /**
- * Computes smooth, continuous 3D pose for each card in an infinite circular deck.
+ * Computes and applies smooth, continuous 3D pose directly to [placeable] without allocating
+ * intermediate pose objects on 90/120fps drag or spring animation frames.
  * - phase in [0, deckCount - 1]: resting / promoting up through the stacked layers.
  * - phase in [deckCount - 1, deckCount): peeling smoothly down off the front of the deck,
  *   tilting forward with top-spine perspective, then tucking cleanly behind the back layer.
  */
-private fun computeRealisticDeckPose(
+private fun Placeable.PlacementScope.placeDeckCardWithPose(
+    placeable: Placeable,
     phase: Float,
     deckCount: Int,
     maxVisibleDepth: Int,
     stepOffsetPx: Float,
     peelDropPx: Float,
-    densityScale: Float
-): DeckCardPose {
+    densityScale: Float,
+    stackCardShape: RoundedCornerShape,
+    isDarkTheme: Boolean,
+    isTopFocused: Boolean,
+    topShadowGlow: Color
+) {
     val peelStart = (deckCount - 1).toFloat()
 
-    // Case 1: Card is peeling off the front toward the back (or emerging smoothly when dragged upward)
+    val poseY: Float
+    val poseScale: Float
+    val poseAlpha: Float
+    val poseRotX: Float
+    val poseZOrder: Float
+    val poseShadowPx: Float
+
     if (deckCount > 1 && phase >= peelStart) {
-        // u goes 0.0 (at front top) -> 1.0 (tucked behind slot deckCount - 1)
         val u = (deckCount.toFloat() - phase).coerceIn(0f, 1f)
         val backDepth = minOf(deckCount - 1, 3)
         val backY = backDepth * stepOffsetPx
         val backScale = 1f - (backDepth * 0.052f)
-        val backAlpha = when {
-            deckCount <= 4 -> (1f - backDepth * 0.21f).coerceAtLeast(0.32f)
-            else -> 0f
+        val backAlpha = if (deckCount <= 4) {
+            (1f - backDepth * 0.21f).coerceAtLeast(0.32f)
+        } else {
+            0f
         }
         val backTilt = -backDepth * 2.1f
 
-        return if (u <= 0.48f) {
-            // Front-half peel: follows finger downward in a natural curved arc with realistic forward tilt
+        if (u <= 0.48f) {
             val t = u / 0.48f
             val arc = sin((t * PI / 2.0)).toFloat()
-            DeckCardPose(
-                translationY = lerp(0f, peelDropPx, arc),
-                scale = lerp(1f, 0.90f, arc),
-                alpha = lerp(1f, 0.92f, arc),
-                rotationX = lerp(0f, -17.5f, arc),
-                zOrder = 200f - u * 10f,
-                shadowElevationPx = lerp(10f, 16f, arc) * densityScale
-            )
+            poseY = lerp(0f, peelDropPx, arc)
+            poseScale = lerp(1f, 0.90f, arc)
+            poseAlpha = lerp(1f, 0.92f, arc)
+            poseRotX = lerp(0f, -17.5f, arc)
+            poseZOrder = 200f - u * 10f
+            poseShadowPx = lerp(10f, 16f, arc) * densityScale
         } else {
-            // Back-half tuck: slips behind the stack cleanly and glides up into the backmost layer
             val t = (u - 0.48f) / 0.52f
             val smoothT = (1f - cos(t * PI).toFloat()) * 0.5f
-            DeckCardPose(
-                translationY = lerp(peelDropPx, backY, smoothT),
-                scale = lerp(0.90f, backScale, smoothT),
-                alpha = if (t < 0.35f) {
-                    lerp(0.92f, maxOf(backAlpha, 0.30f), t / 0.35f)
-                } else {
-                    lerp(maxOf(backAlpha, 0.30f), backAlpha, (t - 0.35f) / 0.65f)
-                },
-                rotationX = lerp(-17.5f, backTilt, smoothT),
-                zOrder = 10f - u,
-                shadowElevationPx = lerp(8f, 1.5f, smoothT) * densityScale
-            )
+            poseY = lerp(peelDropPx, backY, smoothT)
+            poseScale = lerp(0.90f, backScale, smoothT)
+            poseAlpha = if (t < 0.35f) {
+                lerp(0.92f, maxOf(backAlpha, 0.30f), t / 0.35f)
+            } else {
+                lerp(maxOf(backAlpha, 0.30f), backAlpha, (t - 0.35f) / 0.65f)
+            }
+            poseRotX = lerp(-17.5f, backTilt, smoothT)
+            poseZOrder = 10f - u
+            poseShadowPx = lerp(8f, 1.5f, smoothT) * densityScale
+        }
+    } else if (deckCount > 4 && phase > 3.6f) {
+        poseY = 3.6f * stepOffsetPx
+        poseScale = 0.78f
+        poseAlpha = 0f
+        poseRotX = -7.5f
+        poseZOrder = -10f
+        poseShadowPx = 0f
+    } else {
+        val clampedDepth = phase.coerceIn(0f, 3.6f)
+        val baseAlpha = (1f - clampedDepth * 0.21f).coerceAtLeast(0f)
+        poseY = clampedDepth * stepOffsetPx
+        poseScale = (1f - clampedDepth * 0.052f).coerceAtLeast(0.78f)
+        poseAlpha = if (clampedDepth > maxVisibleDepth.toFloat() && deckCount > 4) {
+            val fadeT = (clampedDepth - 3f) / 0.6f
+            lerp(0.37f, 0f, fadeT.coerceIn(0f, 1f))
+        } else {
+            baseAlpha.coerceAtLeast(0.32f)
+        }
+        poseRotX = -clampedDepth * 2.1f
+        poseZOrder = 100f - clampedDepth * 10f
+        poseShadowPx = (10f - clampedDepth * 2.2f).coerceAtLeast(1.5f) * densityScale
+    }
+
+    placeable.placeWithLayer(0, 0, zIndex = poseZOrder) {
+        translationY = poseY
+        scaleX = poseScale
+        scaleY = poseScale
+        alpha = poseAlpha
+        rotationX = poseRotX
+        shape = stackCardShape
+        clip = true
+        transformOrigin = TransformOrigin(0.5f, 0.28f)
+        cameraDistance = 22f * densityScale
+        shadowElevation = if (isDarkTheme) poseShadowPx else poseShadowPx * 0.65f
+        ambientShadowColor = if (isTopFocused) {
+            topShadowGlow.copy(alpha = if (isDarkTheme) 0.45f else 0.28f)
+        } else {
+            Color.Black.copy(alpha = if (isDarkTheme) 0.55f else 0.18f)
+        }
+        spotShadowColor = if (isTopFocused) {
+            topShadowGlow.copy(alpha = if (isDarkTheme) 0.55f else 0.34f)
+        } else {
+            Color.Black.copy(alpha = if (isDarkTheme) 0.65f else 0.22f)
         }
     }
-
-    // Hidden distant cards in decks larger than 4
-    if (deckCount > 4 && phase > 3.6f) {
-        return DeckCardPose(
-            translationY = 3.6f * stepOffsetPx,
-            scale = 0.78f,
-            alpha = 0f,
-            rotationX = -7.5f,
-            zOrder = -10f,
-            shadowElevationPx = 0f
-        )
-    }
-
-    // Case 2: Card is promoting up through the front stack layers [0 .. 3.6]
-    val clampedDepth = phase.coerceIn(0f, 3.6f)
-    val y = clampedDepth * stepOffsetPx
-    val scale = (1f - clampedDepth * 0.052f).coerceAtLeast(0.78f)
-    val baseAlpha = (1f - clampedDepth * 0.21f).coerceAtLeast(0f)
-    val alpha = if (clampedDepth > maxVisibleDepth.toFloat() && deckCount > 4) {
-        val fadeT = (clampedDepth - 3f) / 0.6f
-        lerp(0.37f, 0f, fadeT.coerceIn(0f, 1f))
-    } else {
-        baseAlpha.coerceAtLeast(0.32f)
-    }
-    val tilt = -clampedDepth * 2.1f
-    val elevation = (10f - clampedDepth * 2.2f).coerceAtLeast(1.5f) * densityScale
-
-    return DeckCardPose(
-        translationY = y,
-        scale = scale,
-        alpha = alpha,
-        rotationX = tilt,
-        zOrder = 100f - clampedDepth * 10f,
-        shadowElevationPx = elevation
-    )
 }
 
 @Composable

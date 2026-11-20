@@ -93,18 +93,15 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
+import android.util.LruCache
 
 private object AppIconBitmapCache {
-    private val cache = ConcurrentHashMap<String, Bitmap>()
+    private val cache = LruCache<String, Bitmap>(220)
 
-    fun get(packageName: String): Bitmap? = cache[packageName]
+    fun get(packageName: String): Bitmap? = cache.get(packageName)
 
     fun put(packageName: String, bitmap: Bitmap) {
-        if (cache.size > 160) {
-            cache.clear()
-        }
-        cache[packageName] = bitmap
+        cache.put(packageName, bitmap)
     }
 }
 

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,7 +89,7 @@ fun AnalyticsScreen(
     onNavigateToShield: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val analytics = uiState.analytics
+    val analytics by viewModel.analyticsState.collectAsStateWithLifecycle()
     val numberFmt = remember { NumberFormat.getIntegerInstance() }
     var showResetDialog by remember { mutableStateOf(false) }
 
@@ -469,10 +469,10 @@ fun AnalyticsScreen(
                             modifier = Modifier.padding(top = 4.dp)
                         )
                     }
-                    itemsIndexed(
+                    items(
                         items = analytics.recentEvents,
-                        key = { index, ev -> "ev_${index}_${ev.timestampMs}_${ev.domain}" }
-                    ) { _, event ->
+                        key = { ev -> "ev_${ev.id}_${ev.timestampMs}_${ev.domain}" }
+                    ) { event ->
                         RecentDnsEventRow(event = event)
                     }
                 }

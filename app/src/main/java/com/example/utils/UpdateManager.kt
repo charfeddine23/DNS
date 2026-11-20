@@ -77,19 +77,54 @@ object UpdateManager {
     private const val WEB_RELEASES_URL =
         "https://github.com/$REPO_PATH/releases"
 
+    private val ALLOWED_GITHUB_HOSTS = setOf(
+        "github.com",
+        "api.github.com",
+        "codeload.github.com"
+    )
+
+    internal fun isTrustedGithubUrl(rawUrl: String): Boolean {
+        val url = try {
+            URL(rawUrl.trim())
+        } catch (_: Exception) {
+            return false
+        }
+        if (!url.protocol.equals("https", ignoreCase = true)) return false
+        val host = url.host.lowercase()
+        return host in ALLOWED_GITHUB_HOSTS ||
+            host.endsWith(".github.com") ||
+            host.endsWith(".githubusercontent.com")
+    }
+
+    private fun isLoopbackUrl(rawUrl: String): Boolean {
+        val url = try {
+            URL(rawUrl.trim())
+        } catch (_: Exception) {
+            return false
+        }
+        val host = url.host.lowercase()
+        return (url.protocol.equals("http", ignoreCase = true) ||
+            url.protocol.equals("https", ignoreCase = true)) &&
+            (host == "127.0.0.1" || host == "localhost")
+    }
+
+    private fun isValidHopUrl(nextUrl: String, loopbackSessionOnly: Boolean): Boolean {
+        return if (loopbackSessionOnly) isLoopbackUrl(nextUrl) else isTrustedGithubUrl(nextUrl)
+    }
+
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .retryOnConnectionFailure(true)
             .build()
     }
 
     /**
      * Dedicated HTTP/1.1 streaming client for large binary APK downloads across GitHub CDN
-     * redirects (avoids HTTP/2 stream stalls and sets explicit call timeouts).
+     * redirects (avoids HTTP/2 stream stalls and enforces explicit redirect host allowlisting).
      */
     private val downloadClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -98,8 +133,8 @@ object UpdateManager {
             .readTimeout(45, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .callTimeout(5, TimeUnit.MINUTES)
-            .followRedirects(true)
-            .followSslRedirects(true)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .retryOnConnectionFailure(true)
             .build()
     }
@@ -178,40 +213,64 @@ object UpdateManager {
     }
 
     private fun fetchApiJson(url: String): HttpFetchResult {
-        val request = Request.Builder()
-            .url(url)
-            .cacheControl(CacheControl.FORCE_NETWORK)
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "DNSPulse-Android")
-            .get()
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            return HttpFetchResult(
-                statusCode = response.code,
-                body = response.body?.string(),
-                finalUrl = response.request.url.toString()
-            )
-        }
+        return executeValidatedGet(
+            initialUrl = url,
+            accept = "application/vnd.github+json",
+            userAgent = "VortexDNS-Android",
+            extraHeaders = mapOf("X-GitHub-Api-Version" to "2022-11-28")
+        )
     }
 
     private fun fetchWebPage(url: String): HttpFetchResult {
-        val request = Request.Builder()
-            .url(url)
-            .cacheControl(CacheControl.FORCE_NETWORK)
-            .header("Accept", "text/html,application/xhtml+xml")
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) DNSPulse-Updater")
-            .get()
-            .build()
+        return executeValidatedGet(
+            initialUrl = url,
+            accept = "text/html,application/xhtml+xml",
+            userAgent = "Mozilla/5.0 (Linux; Android 14) VortexDNS-Updater",
+            extraHeaders = emptyMap()
+        )
+    }
 
-        client.newCall(request).execute().use { response ->
-            return HttpFetchResult(
-                statusCode = response.code,
-                body = response.body?.string(),
-                finalUrl = response.request.url.toString()
-            )
+    private fun executeValidatedGet(
+        initialUrl: String,
+        accept: String,
+        userAgent: String,
+        extraHeaders: Map<String, String>
+    ): HttpFetchResult {
+        var currentUrl = initialUrl
+        var redirects = 0
+        while (redirects < 6) {
+            if (!isTrustedGithubUrl(currentUrl)) {
+                throw IOException("Blocked untrusted update host")
+            }
+            val builder = Request.Builder()
+                .url(currentUrl)
+                .cacheControl(CacheControl.FORCE_NETWORK)
+                .header("Accept", accept)
+                .header("User-Agent", userAgent)
+            for ((k, v) in extraHeaders) {
+                builder.header(k, v)
+            }
+            client.newCall(builder.get().build()).execute().use { response ->
+                val code = response.code
+                if (code in 300..399) {
+                    val location = response.header("Location")?.trim()
+                        ?: throw IOException("Redirect without Location header")
+                    val resolved = URL(URL(currentUrl), location).toString()
+                    if (!isTrustedGithubUrl(resolved)) {
+                        throw IOException("Blocked redirect to untrusted update host")
+                    }
+                    currentUrl = resolved
+                    redirects++
+                    continue
+                }
+                return HttpFetchResult(
+                    statusCode = code,
+                    body = response.body?.string(),
+                    finalUrl = response.request.url.toString()
+                )
+            }
         }
+        throw IOException("Too many redirects while checking updates")
     }
 
     private fun fetchFromWebReleases(currentVersionName: String): UpdateCheckResult? {
@@ -427,7 +486,7 @@ object UpdateManager {
             val asset = assets.optJSONObject(i) ?: continue
             val name = asset.optNonNullString("name")
             val downloadUrl = asset.optNonNullString("browser_download_url")
-            if (name.endsWith(".apk", ignoreCase = true) && downloadUrl.isNotBlank()) {
+            if (name.endsWith(".apk", ignoreCase = true) && isTrustedGithubUrl(downloadUrl)) {
                 val size = asset.optLong("size", 0L)
                 return Triple(name, downloadUrl, size)
             }
@@ -513,22 +572,31 @@ object UpdateManager {
     ): Result<File> = withContext(Dispatchers.IO) {
         val updatesDir = resolveUpdatesDir(context)
         val safeFileName = release.apkAssetName
-            .ifBlank { "DNS-Pulse-update.apk" }
+            .ifBlank { "Vortex-DNS-update.apk" }
             .replace(Regex("[^a-zA-Z0-9._-]"), "_")
             .let { if (it.endsWith(".apk", ignoreCase = true)) it else "$it.apk" }
+        val canonicalDir = updatesDir.canonicalPath
         val targetFile = File(updatesDir, safeFileName)
         val partFile = File(updatesDir, "$safeFileName.part")
+        if (!targetFile.canonicalPath.startsWith(canonicalDir + File.separator) ||
+            !partFile.canonicalPath.startsWith(canonicalDir + File.separator)
+        ) {
+            return@withContext Result.failure(SecurityException("Invalid update file path"))
+        }
 
         var lastError: Exception? = null
         val urlsToTry = buildCandidateUrls(release)
+        if (urlsToTry.isEmpty()) {
+            return@withContext Result.failure(IOException("No trusted HTTPS update URL available."))
+        }
 
         for (url in urlsToTry) {
             currentCoroutineContext().ensureActive()
 
-            // Attempt 1: OkHttp HTTP/1.1 streaming download
+            // Attempt 1: OkHttp HTTP/1.1 streaming download with validated redirects
             try {
                 downloadWithOkHttp(
-                    url = url,
+                    initialUrl = url,
                     fallbackTotalBytes = release.apkSizeBytes,
                     partFile = partFile,
                     onProgress = onProgress
@@ -543,7 +611,7 @@ object UpdateManager {
                 lastError = e
             }
 
-            // Attempt 2: HttpURLConnection fallback with manual redirect following
+            // Attempt 2: HttpURLConnection fallback with validated redirect following
             try {
                 downloadWithHttpUrlConnection(
                     initialUrl = url,
@@ -578,7 +646,7 @@ object UpdateManager {
             cleanOldUpdateFiles(preferred)
             return preferred
         }
-        val fallback = File(context.externalCacheDir ?: context.cacheDir, "updates")
+        val fallback = File(context.filesDir, "updates")
         if (!fallback.exists()) fallback.mkdirs()
         cleanOldUpdateFiles(fallback)
         return fallback
@@ -594,8 +662,9 @@ object UpdateManager {
 
     private fun buildCandidateUrls(release: GitHubReleaseInfo): List<String> {
         val primary = release.apkDownloadUrl.trim()
-        val list = mutableListOf<String>()
-        if (primary.isNotBlank()) list.add(primary)
+        if (primary.isBlank()) return emptyList()
+        if (!isTrustedGithubUrl(primary) && !isLoopbackUrl(primary)) return emptyList()
+        val list = mutableListOf(primary)
         // If asset came from GitHub releases/download with unencoded spaces, add encoded form as backup
         if (primary.contains(" ")) {
             list.add(primary.replace(" ", "%20"))
@@ -604,46 +673,79 @@ object UpdateManager {
     }
 
     private suspend fun downloadWithOkHttp(
-        url: String,
+        initialUrl: String,
         fallbackTotalBytes: Long,
         partFile: File,
         onProgress: (progressPercent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit
     ) {
-        val request = Request.Builder()
-            .url(url)
-            .cacheControl(CacheControl.FORCE_NETWORK)
-            .header("User-Agent", "DNSPulse-Android")
-            .header("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
-            .header("Accept-Encoding", "identity")
-            .get()
-            .build()
-
-        val call = downloadClient.newCall(request)
+        val loopbackOnly = isLoopbackUrl(initialUrl)
+        var currentUrl = initialUrl
+        var redirects = 0
+        var activeCall: okhttp3.Call? = null
         val jobHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
-            call.cancel()
+            activeCall?.cancel()
         }
 
         try {
-            call.execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw IOException("HTTP ${response.code}")
+            while (redirects < 8) {
+                currentCoroutineContext().ensureActive()
+                if (!isValidHopUrl(currentUrl, loopbackOnly)) {
+                    throw IOException("Blocked untrusted update download URL")
                 }
-                val contentType = response.header("Content-Type").orEmpty()
-                if (contentType.startsWith("text/html", ignoreCase = true)) {
-                    throw IOException("Server returned HTML instead of APK package")
-                }
-                val body = response.body ?: throw IOException("Empty response body")
-                val totalBytes = body.contentLength().takeIf { it > 0L } ?: fallbackTotalBytes
 
-                body.byteStream().use { input ->
-                    copyStreamWithProgress(
-                        input = input,
-                        partFile = partFile,
-                        totalBytes = totalBytes,
-                        onProgress = onProgress
-                    )
+                val request = Request.Builder()
+                    .url(currentUrl)
+                    .cacheControl(CacheControl.FORCE_NETWORK)
+                    .header("User-Agent", "VortexDNS-Android")
+                    .header("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
+                    .header("Accept-Encoding", "identity")
+                    .get()
+                    .build()
+
+                val call = downloadClient.newCall(request)
+                activeCall = call
+
+                var nextRedirectUrl: String? = null
+                call.execute().use { response ->
+                    val code = response.code
+                    if (code in 300..399) {
+                        val location = response.header("Location")?.trim()
+                        if (location.isNullOrBlank()) {
+                            throw IOException("Redirect without location (HTTP $code)")
+                        }
+                        val resolved = URL(URL(currentUrl), location).toString()
+                        if (!isValidHopUrl(resolved, loopbackOnly)) {
+                            throw IOException("Blocked redirect to untrusted update host")
+                        }
+                        nextRedirectUrl = resolved
+                    } else {
+                        if (!response.isSuccessful) {
+                            throw IOException("HTTP $code")
+                        }
+                        val contentType = response.header("Content-Type").orEmpty()
+                        if (contentType.startsWith("text/html", ignoreCase = true)) {
+                            throw IOException("Server returned HTML instead of APK package")
+                        }
+                        val body = response.body ?: throw IOException("Empty response body")
+                        val totalBytes = body.contentLength().takeIf { it > 0L } ?: fallbackTotalBytes
+
+                        body.byteStream().use { input ->
+                            copyStreamWithProgress(
+                                input = input,
+                                partFile = partFile,
+                                totalBytes = totalBytes,
+                                onProgress = onProgress
+                            )
+                        }
+                        return
+                    }
+                }
+                if (nextRedirectUrl != null) {
+                    currentUrl = nextRedirectUrl!!
+                    redirects++
                 }
             }
+            throw IOException("Too many redirects while downloading update")
         } finally {
             jobHandle?.dispose()
         }
@@ -655,6 +757,7 @@ object UpdateManager {
         partFile: File,
         onProgress: (progressPercent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit
     ) {
+        val loopbackOnly = isLoopbackUrl(initialUrl)
         var currentUrl = initialUrl
         var redirects = 0
         var connection: HttpURLConnection? = null
@@ -669,13 +772,17 @@ object UpdateManager {
         try {
             while (redirects < 8) {
                 currentCoroutineContext().ensureActive()
+                if (!isValidHopUrl(currentUrl, loopbackOnly)) {
+                    throw IOException("Blocked untrusted update download URL")
+                }
+
                 val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
                     connectTimeout = 20_000
                     readTimeout = 45_000
                     requestMethod = "GET"
                     useCaches = false
-                    setRequestProperty("User-Agent", "DNSPulse-Android")
+                    setRequestProperty("User-Agent", "VortexDNS-Android")
                     setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
                     setRequestProperty("Accept-Encoding", "identity")
                 }
@@ -688,7 +795,11 @@ object UpdateManager {
                     if (location.isNullOrBlank()) {
                         throw IOException("Redirect without location (HTTP $code)")
                     }
-                    currentUrl = URL(URL(currentUrl), location).toString()
+                    val resolved = URL(URL(currentUrl), location).toString()
+                    if (!isValidHopUrl(resolved, loopbackOnly)) {
+                        throw IOException("Blocked redirect to untrusted update host")
+                    }
+                    currentUrl = resolved
                     redirects++
                     continue
                 }
@@ -847,7 +958,9 @@ object UpdateManager {
             }
         } catch (_: Exception) {
             null
-        } ?: return ApkCompatibilityResult.Compatible // Let Android PackageInstaller inspect if archive parser unavailable
+        } ?: return ApkCompatibilityResult.Incompatible(
+            "Unable to verify downloaded APK manifest or signing certificate."
+        )
 
         if (archiveInfo.packageName != context.packageName) {
             return ApkCompatibilityResult.Incompatible(
@@ -876,7 +989,12 @@ object UpdateManager {
 
             val installedSigs = extractCertSha256Set(installedInfo)
             val archiveSigs = extractCertSha256Set(archiveInfo)
-            if (installedSigs.isNotEmpty() && archiveSigs.isNotEmpty() && installedSigs.intersect(archiveSigs).isEmpty()) {
+            if (archiveSigs.isEmpty()) {
+                return ApkCompatibilityResult.Incompatible(
+                    "Downloaded APK is missing a valid signing certificate."
+                )
+            }
+            if (installedSigs.isNotEmpty() && installedSigs.intersect(archiveSigs).isEmpty()) {
                 return ApkCompatibilityResult.Incompatible(
                     "Signing key mismatch: the existing app was signed with a different certificate."
                 )
@@ -924,6 +1042,12 @@ object UpdateManager {
      */
     fun triggerApkInstall(context: Context, apkFile: File): Boolean {
         return try {
+            if (!apkFile.exists() || !apkFile.isFile) return false
+            val canonicalPath = apkFile.canonicalPath
+            val updatesCacheRoot = File(context.cacheDir, "updates").canonicalPath + File.separator
+            if (!canonicalPath.startsWith(updatesCacheRoot)) {
+                return false
+            }
             val apkUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -931,7 +1055,7 @@ object UpdateManager {
             )
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
-                clipData = ClipData.newRawUri("DNS Pulse Update", apkUri)
+                clipData = ClipData.newRawUri("Vortex Dns Update", apkUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)

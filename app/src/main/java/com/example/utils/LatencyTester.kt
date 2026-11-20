@@ -14,14 +14,15 @@ object LatencyTester {
      * Falls back to ICMP/InetAddress reachability check.
      */
     suspend fun pingDnsServer(addressOrHost: String, port: Int = 53, timeoutMs: Int = 1200): Long = withContext(Dispatchers.IO) {
-        if (addressOrHost.isBlank()) return@withContext -1L
+        val target = addressOrHost.trim()
+        if (target.isBlank() || port !in 1..65535) return@withContext -1L
 
         // Try TCP handshake on DNS port 53 / 853 for ultra-accurate measurement
         try {
             var latency: Long = -1L
             val elapsed = measureTimeMillis {
                 Socket().use { socket ->
-                    socket.connect(InetSocketAddress(addressOrHost, port), timeoutMs)
+                    socket.connect(InetSocketAddress(target, port), timeoutMs)
                 }
             }
             latency = elapsed
@@ -32,7 +33,7 @@ object LatencyTester {
 
         // Secondary fallback: InetAddress reachability
         try {
-            val addr = InetAddress.getByName(addressOrHost)
+            val addr = InetAddress.getByName(target)
             val startTime = System.currentTimeMillis()
             val reachable = addr.isReachable(timeoutMs)
             val elapsed = System.currentTimeMillis() - startTime

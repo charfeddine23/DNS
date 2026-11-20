@@ -111,7 +111,10 @@ class DnsVpnService : VpnService() {
     private var isInForeground: Boolean = false
     private val tunnelGeneration = AtomicLong(0L)
     private val tunnelMutex = Mutex()
-    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    internal var tunnelDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO
+    private val serviceScope: CoroutineScope by lazy {
+        CoroutineScope(tunnelDispatcher + SupervisorJob())
+    }
     @OptIn(ExperimentalCoroutinesApi::class)
     private val dnsForwardDispatcher = Dispatchers.IO.limitedParallelism(24)
     private val forwardConcurrencyGate = Semaphore(permits = 48)
@@ -325,12 +328,22 @@ class DnsVpnService : VpnService() {
                 START_NOT_STICKY
             }
             ACTION_START -> {
+                val rawName = intent.getStringExtra(EXTRA_SERVER_NAME)
+                    ?.replace(Regex("[\\r\\n\\t\\p{Cntrl}]"), "")
+                    ?.trim()
+                    ?.take(64)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "Vortex Dns"
+                val rawPrimary4 = intent.getStringExtra(EXTRA_PRIMARY_IPV4)?.trim().orEmpty()
+                val rawSecondary4 = intent.getStringExtra(EXTRA_SECONDARY_IPV4)?.trim().orEmpty()
+                val rawPrimary6 = intent.getStringExtra(EXTRA_PRIMARY_IPV6)?.trim().orEmpty()
+                val rawSecondary6 = intent.getStringExtra(EXTRA_SECONDARY_IPV6)?.trim().orEmpty()
                 val config = PersistedVpnConfig(
-                    serverName = intent.getStringExtra(EXTRA_SERVER_NAME)?.takeIf { it.isNotBlank() } ?: "Vortex Dns",
-                    primaryIpv4 = intent.getStringExtra(EXTRA_PRIMARY_IPV4)?.trim()?.takeIf { it.isNotBlank() } ?: DEFAULT_UPSTREAM_IPV4,
-                    secondaryIpv4 = intent.getStringExtra(EXTRA_SECONDARY_IPV4).orEmpty().trim(),
-                    primaryIpv6 = intent.getStringExtra(EXTRA_PRIMARY_IPV6).orEmpty().trim(),
-                    secondaryIpv6 = intent.getStringExtra(EXTRA_SECONDARY_IPV6).orEmpty().trim()
+                    serverName = rawName,
+                    primaryIpv4 = rawPrimary4.takeIf { isLiteralIpv4(it) } ?: DEFAULT_UPSTREAM_IPV4,
+                    secondaryIpv4 = rawSecondary4.takeIf { isLiteralIpv4(it) }.orEmpty(),
+                    primaryIpv6 = rawPrimary6.takeIf { isLiteralIpv6Syntax(it) }.orEmpty(),
+                    secondaryIpv6 = rawSecondary6.takeIf { isLiteralIpv6Syntax(it) }.orEmpty()
                 )
                 startOrMaintainTunnel(config)
             }
@@ -847,13 +860,20 @@ class DnsVpnService : VpnService() {
         val out = LinkedHashSet<InetAddress>()
         for (raw in candidates) {
             val trimmed = raw.trim()
-            if (trimmed.isBlank() || !trimmed.contains(':')) continue
+            if (!isLiteralIpv6Syntax(trimmed)) continue
             runCatching { InetAddress.getByName(trimmed) }
                 .getOrNull()
                 ?.takeIf { it is Inet6Address }
                 ?.let { out.add(it) }
         }
         return out.toList()
+    }
+
+    private fun isLiteralIpv6Syntax(host: String): Boolean {
+        if (host.isBlank() || host.length > 45 || !host.contains(':')) return false
+        return host.all { ch ->
+            ch in '0'..'9' || ch in 'a'..'f' || ch in 'A'..'F' || ch == ':' || ch == '.'
+        }
     }
 
     private fun isLiteralIpv4(host: String): Boolean {

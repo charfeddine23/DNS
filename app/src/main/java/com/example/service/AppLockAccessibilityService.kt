@@ -43,6 +43,7 @@ class AppLockAccessibilityService : AccessibilityService() {
     private var lastObservedRecentsNodeCount: Int = 0
     private val trackedInstantLabels = ConcurrentHashMap<String, String>()
     private val observedInstantPkgsInRecents = ConcurrentHashMap.newKeySet<String>()
+    private val appLabelCache = ConcurrentHashMap<String, String>()
 
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -543,7 +544,8 @@ class AppLockAccessibilityService : AccessibilityService() {
     }
 
     private fun resolveAppName(pkg: String): String {
-        return try {
+        appLabelCache[pkg]?.let { return it }
+        val resolved = try {
             val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 packageManager.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0))
             } else {
@@ -554,6 +556,11 @@ class AppLockAccessibilityService : AccessibilityService() {
         } catch (_: Throwable) {
             pkg
         }
+        if (appLabelCache.size > 200) {
+            appLabelCache.clear()
+        }
+        appLabelCache[pkg] = resolved
+        return resolved
     }
 
     private fun isSystemTransientPackage(pkg: String): Boolean {
