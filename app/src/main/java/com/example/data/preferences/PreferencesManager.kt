@@ -19,7 +19,6 @@ class PreferencesManager(private val context: Context) {
         val KEY_ENGINE_MODE = stringPreferencesKey("key_engine_mode")
         val KEY_AUTO_START_BOOT = booleanPreferencesKey("key_auto_start_boot")
         val KEY_LAST_VPN_SERVER_ID = stringPreferencesKey("key_last_vpn_server_id")
-        val KEY_SELECTED_DOT_PRESET = stringPreferencesKey("key_selected_dot_preset")
         val KEY_GLOW_INTENSITY = booleanPreferencesKey("key_glow_intensity")
         val KEY_THEME_STYLE = stringPreferencesKey("key_theme_style")
         val KEY_APPEARANCE_MODE = stringPreferencesKey("key_appearance_mode")
@@ -42,10 +41,6 @@ class PreferencesManager(private val context: Context) {
 
     val lastVpnServerIdFlow: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[KEY_LAST_VPN_SERVER_ID] ?: "adguard_standard"
-    }
-
-    val selectedDotPresetFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[KEY_SELECTED_DOT_PRESET] ?: "dns.adguard.com"
     }
 
     val glowIntensityFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -93,12 +88,6 @@ class PreferencesManager(private val context: Context) {
     suspend fun setLastVpnServerId(id: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_LAST_VPN_SERVER_ID] = id
-        }
-    }
-
-    suspend fun setSelectedDotPreset(hostname: String) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_SELECTED_DOT_PRESET] = hostname
         }
     }
 

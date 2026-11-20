@@ -129,16 +129,6 @@ class AppAuthenticatorRepository private constructor(
         _configFlow.value = snapshot
     }
 
-    fun clearAppRelockTimeout(packageName: String) {
-        val snapshot: AppAuthenticatorConfig
-        synchronized(lock) {
-            appRelockTimeouts.remove(packageName)
-            persistAppTimeoutsLocked()
-            snapshot = buildConfigLocked()
-        }
-        _configFlow.value = snapshot
-    }
-
     fun getEffectiveRelockTimeoutSeconds(packageName: String): Int {
         return appRelockTimeouts[packageName] ?: relockTimeoutSeconds
     }

@@ -11,7 +11,6 @@
     <string name="appearance_mode_dark">الوضع الليلي</string>
     <string name="appearance_mode_light">الوضع النهاري</string>
     <string name="appearance_mode_system">حسب النظام</string>
-    <string name="nav_label_analytics">Analytics</string>
     <string name="analytics_title">إحصائيات الحظر والبيانات</string>
     <string name="analytics_subtitle">رصد حقيقي ومباشر للإعلانات والمتتبعات عبر DNS</string>
     <string name="analytics_reset_desc">تصفير الإحصائيات</string>
@@ -48,17 +47,12 @@
     <string name="analytics_legend_dns">DNS</string>
     <string name="analytics_legend_ads">إعلانات وصلت</string>
     <string name="analytics_legend_blocked">تم الإيقاف</string>
-    <string name="nav_label_authenticator">Authenticator</string>
     <string name="auth_title">قفل البصمة (Authenticator)</string>
     <string name="auth_subtitle">تفعيل المصادقة بالبصمة على أي تطبيق تريده</string>
     <string name="auth_test_fingerprint_desc">تجربة البصمة</string>
     <string name="auth_master_guard_title">حماية البصمة للتطبيقات</string>
     <string name="auth_master_guard_active">جاري مراقبة التطبيقات المحمية لطلب البصمة عند الفتح</string>
     <string name="auth_master_guard_paused">فعّل الحارس الرئيسي لتطبيق قفل البصمة عند فتح التطبيقات</string>
-    <string name="auth_hw_ready">مستشعر البصمة جاهز</string>
-    <string name="auth_hw_none_enrolled">لا توجد بصمة مسجلة</string>
-    <string name="auth_hw_unavailable">مستشعر البصمة غير متوفر</string>
-    <string name="auth_enroll_btn">تسجيل بصمة</string>
     <string name="auth_service_active">خدمة القفل الفوري نشطة</string>
     <string name="auth_service_active_desc">سيتم طلب البصمة تلقائياً فور فتح أي تطبيق قمت بتفعيله.</string>
     <string name="auth_service_needed">تفعيل خدمة مراقبة التطبيقات</string>

@@ -2,7 +2,6 @@ package com.example.service
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,7 +33,6 @@ class ShizukuDnsBridgeService private constructor(private val context: Context) 
 
     companion object {
         private const val TAG = "ShizukuDnsBridge"
-        private const val REQUEST_CODE_SHIZUKU_PERMISSION = 7001
 
         @Volatile
         private var instance: ShizukuDnsBridgeService? = null
@@ -59,19 +57,6 @@ class ShizukuDnsBridgeService private constructor(private val context: Context) 
         _shizukuStatus.value = ShizukuStatus.NOT_AVAILABLE
     }
 
-    private val requestPermissionResultListener =
-        Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-            if (requestCode == REQUEST_CODE_SHIZUKU_PERMISSION) {
-                if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                    Log.i(TAG, "Shizuku permission granted by user!")
-                    _shizukuStatus.value = ShizukuStatus.AUTHORIZED
-                } else {
-                    Log.w(TAG, "Shizuku permission denied by user")
-                    _shizukuStatus.value = ShizukuStatus.WAITING_PERMISSION
-                }
-            }
-        }
-
     init {
         initListeners()
         checkStatus()
@@ -81,7 +66,6 @@ class ShizukuDnsBridgeService private constructor(private val context: Context) 
         try {
             Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
             Shizuku.addBinderDeadListener(binderDeadListener)
-            Shizuku.addRequestPermissionResultListener(requestPermissionResultListener)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to register Shizuku listeners", e)
         }
@@ -107,34 +91,6 @@ class ShizukuDnsBridgeService private constructor(private val context: Context) 
         }
         _shizukuStatus.value = status
         return status
-    }
-
-    /**
-     * Triggers the Shizuku permission request prompt dialog to authorize this app.
-     */
-    fun requestShizukuPermission() {
-        try {
-            if (Shizuku.pingBinder()) {
-                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                    Shizuku.requestPermission(REQUEST_CODE_SHIZUKU_PERMISSION)
-                } else {
-                    _shizukuStatus.value = ShizukuStatus.AUTHORIZED
-                }
-            } else {
-                Log.w(TAG, "Shizuku binder not active; cannot request permission")
-            }
-        } catch (e: Throwable) {
-            Log.e(TAG, "Error requesting Shizuku permission", e)
-        }
-    }
-
-    /**
-     * Directly grants WRITE_SECURE_SETTINGS to DNS Pulse without requiring a PC,
-     * using the Shizuku shell bridge.
-     */
-    suspend fun grantWriteSecureSettingsViaShizuku(): ShizukuDnsResult = withContext(Dispatchers.IO) {
-        val pkg = context.packageName
-        executePrivilegedCommand("pm grant $pkg android.permission.WRITE_SECURE_SETTINGS")
     }
 
     /**
@@ -177,15 +133,6 @@ class ShizukuDnsBridgeService private constructor(private val context: Context) 
     suspend fun disablePrivateDns(): ShizukuDnsResult = withContext(Dispatchers.IO) {
         val cmd = "settings put global private_dns_mode off && settings put global private_dns_specifier \"\""
         executePrivilegedCommand(cmd)
-    }
-
-    /**
-     * Reads the current system Private DNS specifier directly via shell.
-     */
-    suspend fun readSystemPrivateDns(): String = withContext(Dispatchers.IO) {
-        val modeResult = executePrivilegedCommand("settings get global private_dns_mode")
-        val hostResult = executePrivilegedCommand("settings get global private_dns_specifier")
-        "Mode: ${modeResult.output.trim()} | Specifier: ${hostResult.output.trim()}"
     }
 
     /**
@@ -244,7 +191,6 @@ class ShizukuDnsBridgeService private constructor(private val context: Context) 
         try {
             Shizuku.removeBinderReceivedListener(binderReceivedListener)
             Shizuku.removeBinderDeadListener(binderDeadListener)
-            Shizuku.removeRequestPermissionResultListener(requestPermissionResultListener)
         } catch (e: Throwable) {
             Log.w(TAG, "Error cleaning up Shizuku listeners", e)
         }

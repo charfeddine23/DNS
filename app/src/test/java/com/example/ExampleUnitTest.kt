@@ -10,11 +10,6 @@ import org.junit.Test
 
 class ExampleUnitTest {
     @Test
-    fun addition_isCorrect() {
-        assertEquals(4, 2 + 2)
-    }
-
-    @Test
     fun multiThemeEngine_hasAllTenThemesWithRequestedBadges() {
         assertEquals(10, AppThemeStyle.entries.size)
         assertEquals("Tokyo Night", AppThemeStyle.TOKYO_NIGHT.displayName)

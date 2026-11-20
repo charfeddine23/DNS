@@ -27,7 +27,6 @@
     <string name="appearance_mode_dark">Dark</string>
     <string name="appearance_mode_light">Light</string>
     <string name="appearance_mode_system">System</string>
-    <string name="nav_label_analytics">Analytics</string>
     <string name="analytics_title">Traffic &amp; Ad Analytics</string>
     <string name="analytics_subtitle">Live device-level DNS ad &amp; tracker telemetry</string>
     <string name="analytics_reset_desc">Reset analytics statistics</string>
@@ -64,17 +63,12 @@
     <string name="analytics_legend_dns">DNS</string>
     <string name="analytics_legend_ads">Ads Reached</string>
     <string name="analytics_legend_blocked">Blocked</string>
-    <string name="nav_label_authenticator">Authenticator</string>
     <string name="auth_title">App Authenticator</string>
     <string name="auth_subtitle">Protect any app with Fingerprint Authentication</string>
     <string name="auth_test_fingerprint_desc">Test Fingerprint Authentication</string>
     <string name="auth_master_guard_title">Fingerprint App Guard</string>
     <string name="auth_master_guard_active">Monitoring enabled apps for biometric lock</string>
     <string name="auth_master_guard_paused">Enable master guard to enforce locks on launch</string>
-    <string name="auth_hw_ready">Fingerprint Sensor Ready</string>
-    <string name="auth_hw_none_enrolled">No Fingerprint Enrolled</string>
-    <string name="auth_hw_unavailable">Biometric Hardware Unavailable</string>
-    <string name="auth_enroll_btn">Enroll</string>
     <string name="auth_service_active">App Lock Monitor Active</string>
     <string name="auth_service_active_desc">Instant biometric lock triggers automatically when a protected app opens.</string>
     <string name="auth_service_needed">Enable App Lock Service</string>

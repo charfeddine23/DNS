@@ -36,8 +36,6 @@ import com.example.utils.UpdateManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,7 +46,6 @@ import kotlinx.coroutines.launch
 data class HomeUiState(
     val engineMode: DnsEngineMode = DnsEngineMode.PRIVATE_DNS,
     val privateDnsState: PrivateDnsState = PrivateDnsState(PrivateDnsMode.Opportunistic, null, false),
-    val selectedDotPreset: String = "dns.adguard.com",
     val privatePresets: List<PrivateDnsPreset> = DnsPresetData.defaultPrivateDnsPresets,
     val vpnServers: List<DnsServerProfile> = DnsPresetData.defaultVpnDnsServers,
     val selectedVpnServerId: String = "adguard_standard",
@@ -164,16 +161,8 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         appAuthRepository.toggleAppLock(packageName, enabled)
     }
 
-    fun setRelockTimeoutSeconds(seconds: Int) {
-        appAuthRepository.setRelockTimeoutSeconds(seconds)
-    }
-
     fun setAppRelockTimeoutSeconds(packageName: String, seconds: Int) {
         appAuthRepository.setAppRelockTimeoutSeconds(packageName, seconds)
-    }
-
-    fun setAllowDeviceCredentialFallback(allowed: Boolean) {
-        appAuthRepository.setAllowDeviceCredentialFallback(allowed)
     }
 
     fun resetAnalytics() {
@@ -184,11 +173,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.engineModeFlow.collect { mode ->
                 _uiState.update { it.copy(engineMode = mode) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.selectedDotPresetFlow.collect { dot ->
-                _uiState.update { it.copy(selectedDotPreset = dot) }
             }
         }
         viewModelScope.launch {
@@ -255,10 +239,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
         val state = PrivateDnsController.getPrivateDnsState(getApplication())
         shizukuBridge.checkStatus()
         _uiState.update { it.copy(privateDnsState = state) }
-    }
-
-    fun requestShizukuAuthorization() {
-        shizukuBridge.requestShizukuPermission()
     }
 
     fun setEngineMode(mode: DnsEngineMode) {
@@ -386,8 +366,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
     fun activatePrivateDnsPreset(preset: PrivateDnsPreset, onFallbackRequired: (String) -> Unit) {
         val context = getApplication<Application>()
         viewModelScope.launch {
-            prefs.setSelectedDotPreset(preset.hostname)
-
             // 1. Try standard WRITE_SECURE_SETTINGS in-process
             val directSuccess = PrivateDnsController.setPrivateDnsDirectly(context, preset.hostname)
             if (directSuccess) {
@@ -432,26 +410,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
 
             // 3. Fallback
             onFallbackRequired()
-        }
-    }
-
-    fun grantPermissionViaShizuku() {
-        viewModelScope.launch {
-            val res = shizukuBridge.grantWriteSecureSettingsViaShizuku()
-            if (res.success) {
-                refreshSystemPrivateDnsState()
-            } else {
-                _uiState.value = _uiState.value.copy(userMessage = "Shizuku error: ${res.error}")
-            }
-        }
-    }
-
-    fun toggleVpn(context: Context) {
-        val isRunning = DnsVpnService.isRunning.value || _uiState.value.isVpnActive
-        if (isRunning) {
-            stopVpn(context)
-        } else {
-            startVpn(context)
         }
     }
 
@@ -514,39 +472,6 @@ class DnsPulseViewModel(application: Application) : AndroidViewModel(application
             } else {
                 pingAllServers()
             }
-        }
-    }
-
-    fun addCustomServer(
-        name: String,
-        pIpv4: String,
-        sIpv4: String,
-        pIpv6: String,
-        dotHostname: String
-    ) {
-        val newProfile = DnsServerProfile(
-            id = "custom_${System.currentTimeMillis()}",
-            name = name.ifBlank { "Custom DNS" },
-            description = "User-defined DNS server profile",
-            primaryIpv4 = pIpv4.trim(),
-            secondaryIpv4 = sIpv4.trim(),
-            primaryIpv6 = pIpv6.trim(),
-            dotHostname = dotHostname.trim(),
-            isCustom = true,
-            iconKey = "dns"
-        )
-        val list = _uiState.value.vpnServers.toMutableList()
-        list.add(0, newProfile)
-        _uiState.value = _uiState.value.copy(
-            vpnServers = list,
-            selectedVpnServerId = newProfile.id
-        )
-        viewModelScope.launch {
-            val ping = LatencyTester.pingDnsServer(newProfile.primaryIpv4)
-            val updated = _uiState.value.vpnServers.map {
-                if (it.id == newProfile.id) it.copy(latencyMs = if (ping > 0) ping else null) else it
-            }
-            _uiState.value = _uiState.value.copy(vpnServers = updated)
         }
     }
 

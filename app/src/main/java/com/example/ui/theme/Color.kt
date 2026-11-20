@@ -562,21 +562,9 @@ val GlassBorder: Color
 val GlassBorderLuminous: Color
     @Composable get() = LocalPulsePalette.current.glassBorderLuminous
 
-val GlassTopSpecular: Color
-    @Composable get() = LocalPulsePalette.current.glassTopSpecular
-
 // Neumorphism Sculpted Slate Tokens
 val NeuBaseDark: Color
     @Composable get() = LocalPulsePalette.current.neuBase
-
-val NeuSurfaceLight: Color
-    @Composable get() = LocalPulsePalette.current.neuSurfaceLight
-
-val NeuHighlightEdge: Color
-    @Composable get() = LocalPulsePalette.current.neuHighlightEdge
-
-val NeuShadowEdge: Color
-    @Composable get() = LocalPulsePalette.current.neuShadowEdge
 
 // Holographic & Chromatic Dispersion Tokens
 val HoloViolet: Color
@@ -585,40 +573,15 @@ val HoloViolet: Color
 val HoloMagenta: Color
     @Composable get() = LocalPulsePalette.current.secondaryGlowAccent
 
-val ChromaticCyan: Color
-    @Composable get() = LocalPulsePalette.current.primaryAccent
-
-val ChromaticMagenta: Color
-    @Composable get() = LocalPulsePalette.current.secondaryGlowAccent
-
-val ChromaticAmber: Color
-    @Composable get() = LocalPulsePalette.current.amberAccent
-
-// Frosted Arctic Tokens
-val FrostedTint: Color
-    @Composable get() = LocalPulsePalette.current.frostedTint
-
-val FrostedBorder: Color
-    @Composable get() = LocalPulsePalette.current.frostedBorder
-
 // Vibrant Cyber Accents
 val ElectricCyan: Color
     @Composable get() = LocalPulsePalette.current.primaryAccent
 
-val ElectricCyanGlow: Color
-    @Composable get() = LocalPulsePalette.current.primaryAccentGlow
-
 val EmeraldMint: Color
     @Composable get() = LocalPulsePalette.current.emeraldAccent
 
-val EmeraldMintGlow: Color
-    @Composable get() = LocalPulsePalette.current.emeraldAccentGlow
-
 val CrimsonPulse: Color
     @Composable get() = LocalPulsePalette.current.crimsonAccent
-
-val CrimsonPulseGlow: Color
-    @Composable get() = LocalPulsePalette.current.crimsonAccentGlow
 
 val AmberWarning: Color
     @Composable get() = LocalPulsePalette.current.amberAccent
@@ -628,9 +591,6 @@ val TextPrimary: Color
 
 val TextSecondary: Color
     @Composable get() = LocalPulsePalette.current.textSecondary
-
-val TextTertiary: Color
-    @Composable get() = LocalPulsePalette.current.textTertiary
 
 val OnAccentInk: Color
     @Composable get() = LocalPulsePalette.current.onAccent
@@ -642,7 +602,6 @@ val SubtleSurfaceBorder: Color
     @Composable get() = LocalPulsePalette.current.subtleBorder
 
 // Fixed Full-Screen Update Prompt Palette (always high-contrast dark crimson space card)
-val UpdateScreenBg = Color(0xFF111116)
 val UpdateCrimson = Color(0xFFE01818)
 val UpdateCrimsonText = Color(0xFFD61F26)
 val UpdateHaloOuter = Color(0xFF280D11)

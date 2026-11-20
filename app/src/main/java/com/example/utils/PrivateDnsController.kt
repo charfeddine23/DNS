@@ -124,13 +124,4 @@ object PrivateDnsController {
         }
         return intent
     }
-
-    fun getAdbCommand(context: Context): String {
-        val pkg = context.packageName
-        return "adb shell pm grant $pkg android.permission.WRITE_SECURE_SETTINGS"
-    }
-
-    fun getDirectAdbDnsCommand(hostname: String): String {
-        return "adb shell settings put global private_dns_mode hostname && adb shell settings put global private_dns_specifier $hostname"
-    }
 }
